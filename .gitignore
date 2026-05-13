@@ -1,0 +1,41 @@
+# Node / Next.js
+node_modules/
+.next/
+.turbo/
+dist/
+build/
+*.log
+*.tsbuildinfo
+
+# 备份（验收满意可删，先 ignore）
+docs.legacy/
+docs/legacy/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# OS / Editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
+*.iml
+
+# Python（未来 src/ + nodes/ 实施时用得到）
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# uv lockfile 跟 pyproject 配对提交，但 build 产物不收
+*.egg-info/
+
+# Traces / Reports / Cache（运行时产物，框架实施期才会有）
+traces/
+reports/
+.cache/

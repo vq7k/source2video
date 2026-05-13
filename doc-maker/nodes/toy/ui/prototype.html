@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>source2video · ToyNode Console (Prototype)</title>
+  <style>
+    :root {
+      --bg: #FAFAFB;
+      --card: #FFFFFF;
+      --border: #E5E7EB;
+      --border-strong: #D1D5DB;
+      --text: #111827;
+      --text-mute: #6B7280;
+      --text-faint: #9CA3AF;
+      --link: #2563EB;
+      --pass: #059669;
+      --pass-bg: #ECFDF5;
+      --fail: #D97706;
+      --fail-bg: #FFFBEB;
+      --chip-bg: #F3F4F6;
+      --code-bg: #F9FAFB;
+      --accent: #4F46E5;
+      --accent-hover: #4338CA;
+      --shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family:
+        -apple-system, BlinkMacSystemFont,
+        "PingFang SC", "Hiragino Sans GB",
+        "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC",
+        "Helvetica Neue", Arial, system-ui, sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.7;
+      padding: 28px 16px 80px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+    /* 中文段落与中英混排时的呼吸感 */
+    p, li, .pt-text, .eval-judge, .trace-thinking, textarea { letter-spacing: 0.02em; }
+    code, .mono { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, "Source Code Pro", monospace; font-size: 12.5px; letter-spacing: 0; }
+    .container { max-width: 1080px; margin: 0 auto; }
+
+    /* Top bar */
+    .topbar { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; box-shadow: var(--shadow); }
+    .topbar-left h1 { font-size: 13px; font-weight: 600; color: var(--text-mute); letter-spacing: 0.04em; }
+    .topbar-left .artifact-id { font-family: "SF Mono", monospace; font-size: 13px; color: var(--text); margin-top: 4px; }
+    .topbar-actions { display: flex; gap: 8px; }
+
+    /* Flowmap (心智图) */
+    .flowmap { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 12px; box-shadow: var(--shadow); }
+    .flowmap-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 12px; display: flex; align-items: baseline; gap: 10px; letter-spacing: 0.02em; }
+    .flowmap-title .hint { font-weight: 400; font-size: 12px; color: var(--text-faint); }
+    .flowmap-row { display: flex; align-items: stretch; gap: 6px; margin-bottom: 8px; }
+    .flowmap-row:last-child { margin-bottom: 0; }
+    .flow-node { flex: 1; min-width: 0; padding: 10px 12px 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); display: block; position: relative; }
+    .flow-node.warn { border-color: var(--fail); background: var(--fail-bg); }
+    .flow-node.idle { background: var(--code-bg); border-style: dashed; }
+
+    /* Help icon · 悬浮显示功能说明 */
+    .flow-help { position: absolute; top: 6px; right: 6px; width: 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: 50%; background: var(--card); color: var(--text-faint); font-size: 10px; font-weight: 700; cursor: help; display: inline-flex; align-items: center; justify-content: center; padding: 0; line-height: 1; font-family: "SF Mono", monospace; }
+    .flow-node.warn .flow-help { background: var(--fail-bg); }
+    .flow-node.idle .flow-help { background: var(--code-bg); }
+    .flow-help:hover, .flow-help:focus { background: var(--accent); color: white; border-color: var(--accent); outline: none; }
+
+    .flow-tooltip {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      width: max-content;
+      max-width: 320px;
+      background: #111827;
+      color: #F9FAFB;
+      padding: 10px 13px;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.65;
+      letter-spacing: 0.01em;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-4px);
+      transition: opacity 0.14s ease, transform 0.14s ease;
+      z-index: 20;
+      text-align: left;
+      white-space: normal;
+      font-weight: 400;
+    }
+    .flow-tooltip::before {
+      content: '';
+      position: absolute;
+      top: -5px; right: 4px;
+      width: 10px; height: 10px;
+      background: #111827;
+      transform: rotate(45deg);
+    }
+    .flow-tooltip strong { color: #F9FAFB; font-weight: 600; }
+    .flow-tooltip code { background: rgba(255,255,255,0.12); padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #E5E7EB; font-family: "SF Mono", monospace; letter-spacing: 0; }
+    .flow-tooltip .doc-ref { display: block; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.12); color: #9CA3AF; font-size: 11px; font-family: "SF Mono", monospace; }
+    .flow-help:hover ~ .flow-tooltip,
+    .flow-help:focus ~ .flow-tooltip {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+    .flow-head { display: flex; align-items: center; gap: 6px; }
+    .flow-icon { font-size: 14px; }
+    .flow-name { font-size: 13px; font-weight: 600; color: var(--text); }
+    .flow-stat { font-family: "SF Mono", monospace; font-size: 11.5px; color: var(--text-mute); margin-top: 4px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .flow-status { font-size: 11px; margin-top: 3px; color: var(--text-faint); }
+    .flow-status.ok { color: var(--pass); }
+    .flow-status.warn { color: var(--fail); }
+    .flow-arrow { display: flex; align-items: center; color: var(--text-faint); font-size: 16px; padding: 0 2px; user-select: none; flex: 0 0 auto; }
+    .flow-bend { display: flex; align-items: center; justify-content: flex-end; color: var(--text-faint); font-size: 18px; margin: 2px 0; padding-right: 56px; user-select: none; height: 14px; }
+
+    /* Card */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin-bottom: 12px; box-shadow: var(--shadow); scroll-margin-top: 16px; }
+    .card-title { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: 0.02em; margin-bottom: 14px; display: flex; align-items: baseline; gap: 10px; }
+    .card-title .hint { font-weight: 400; font-size: 12px; color: var(--text-faint); letter-spacing: 0; }
+
+    /* Materials */
+    .mat-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .mat-badge { background: var(--chip-bg); border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; font-family: "SF Mono", monospace; font-size: 12px; cursor: pointer; color: var(--text); transition: all 0.12s; }
+    .mat-badge:hover { border-color: var(--accent); color: var(--accent); background: white; }
+
+    /* Artifact */
+    .artifact-points { list-style: none; }
+    .artifact-points li { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .artifact-points li:last-child { border-bottom: none; }
+    .pt-num { font-family: "SF Mono", monospace; color: var(--text-faint); margin-right: 12px; min-width: 18px; }
+    .pt-text { flex: 1; }
+    .pt-feedback-btn { background: transparent; border: 1px solid var(--border); padding: 3px 9px; border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text-mute); transition: all 0.12s; }
+    .pt-feedback-btn:hover { background: var(--accent); border-color: var(--accent); color: white; }
+    .metadata { background: var(--code-bg); padding: 10px 12px; border-radius: 6px; margin-top: 14px; font-family: "SF Mono", monospace; font-size: 12px; color: var(--text-mute); display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; }
+    .metadata span:nth-child(odd) { color: var(--text-faint); }
+
+    /* Eval */
+    .eval-row { padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .eval-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .eval-row:first-child { padding-top: 0; }
+    .eval-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .eval-icon { font-size: 14px; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-weight: 700; }
+    .eval-icon.pass { background: var(--pass-bg); color: var(--pass); }
+    .eval-icon.fail { background: var(--fail-bg); color: var(--fail); }
+    .eval-name { font-weight: 600; min-width: 90px; }
+    .eval-verdict { font-family: "SF Mono", monospace; font-size: 11px; padding: 2px 7px; border-radius: 4px; font-weight: 600; letter-spacing: 0.5px; }
+    .verdict-pass { background: var(--pass-bg); color: var(--pass); }
+    .verdict-fail { background: var(--fail-bg); color: var(--fail); }
+    .eval-judge { color: var(--text-mute); font-size: 13px; flex: 1; min-width: 200px; }
+    .eval-judge::before { content: '"'; }
+    .eval-judge::after { content: '"'; }
+    .eval-detail { margin-top: 10px; padding: 10px 12px; background: var(--code-bg); border-radius: 6px; font-size: 12px; }
+    .eval-detail-row { display: grid; grid-template-columns: 150px 1fr; gap: 6px 14px; margin-bottom: 5px; }
+    .eval-detail-row:last-child { margin-bottom: 0; }
+    .eval-detail-key { color: var(--text-faint); font-family: "SF Mono", monospace; }
+    .eval-detail-val { font-family: "SF Mono", monospace; color: var(--text); }
+    .eval-detail-val.prose { font-family: inherit; font-style: italic; color: var(--text-mute); }
+    .link { color: var(--link); cursor: pointer; text-decoration: none; }
+    .link:hover { text-decoration: underline; }
+
+    /* Decision Trace */
+    details > summary { list-style: none; cursor: pointer; user-select: none; }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::before { content: '▶'; display: inline-block; margin-right: 8px; transition: transform 0.15s; font-size: 10px; color: var(--text-faint); }
+    details[open] > summary::before { transform: rotate(90deg); }
+    .trace-content { margin-top: 14px; font-size: 12.5px; }
+    .trace-row { display: grid; grid-template-columns: 180px 1fr; gap: 6px 14px; margin-bottom: 6px; }
+    .trace-key { color: var(--text-faint); font-family: "SF Mono", monospace; }
+    .trace-val { font-family: "SF Mono", monospace; color: var(--text); word-break: break-word; }
+    .trace-thinking { background: var(--code-bg); padding: 12px 14px; border-radius: 6px; color: var(--text); font-style: italic; margin-top: 10px; font-size: 13px; line-height: 1.6; border-left: 3px solid var(--accent); }
+
+    /* Metrics grid */
+    .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .metric { padding: 12px 14px; background: var(--code-bg); border-radius: 8px; }
+    .metric-label { font-size: 12px; color: var(--text-mute); letter-spacing: 0.02em; font-weight: 600; }
+    .metric-value { font-family: "SF Mono", monospace; font-size: 19px; font-weight: 600; margin-top: 4px; color: var(--text); }
+    .metric-value.warn { color: var(--fail); }
+    .metric-value.ok { color: var(--pass); }
+    .metric-sub { font-size: 11.5px; color: var(--text-mute); margin-top: 2px; }
+
+    /* Buttons */
+    .btn { padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid var(--border-strong); background: var(--card); color: var(--text); transition: all 0.12s; font-family: inherit; }
+    .btn:hover { background: var(--chip-bg); }
+    .btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+    .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .btn-icon { width: 28px; height: 28px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; color: var(--text-mute); }
+    .btn-icon:hover { background: var(--accent); color: white; border-color: var(--accent); }
+
+    /* Rendered prompt segment 块 */
+    .seg-block { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 10px; overflow: hidden; }
+    .seg-label { padding: 5px 12px; font-size: 11px; font-family: "SF Mono", monospace; color: var(--text-mute); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .seg-label .src { opacity: 0.75; }
+    .seg-body { padding: 11px 14px; font-family: "SF Mono", monospace; font-size: 12.5px; white-space: pre-wrap; line-height: 1.65; color: var(--text); background: var(--card); }
+    .seg-block.tpl     .seg-label { background: #F3F4F6; color: #4B5563; }
+    .seg-block.injected .seg-label { background: #E0F2FE; color: #075985; }
+    .seg-block.exemplar .seg-label { background: #DCFCE7; color: #166534; }
+    .seg-block.case    .seg-label { background: #FEF3C7; color: #92400E; }
+    .seg-block.output  .seg-label { background: #EDE9FE; color: #5B21B6; }
+    .seg-block.role    .seg-label { background: #1F2937; color: #F9FAFB; font-weight: 600; letter-spacing: 0.04em; }
+
+    /* 使用说明 */
+    .help-section { margin-bottom: 18px; }
+    .help-section h3 { font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text); display: flex; align-items: center; gap: 6px; }
+    .help-section h3 .num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: var(--accent); color: white; border-radius: 50%; font-size: 11px; font-family: "SF Mono", monospace; }
+    .help-section p, .help-section li { font-size: 13px; color: var(--text); line-height: 1.7; }
+    .help-section ul { padding-left: 22px; }
+    .help-section ul li { margin-bottom: 4px; }
+    .help-section code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+    .help-rule { background: #FFFBEB; border-left: 3px solid var(--fail); padding: 10px 14px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; }
+    .help-rule strong { color: var(--fail); }
+    .help-doc-row { font-family: "SF Mono", monospace; font-size: 12px; color: var(--text-mute); margin-bottom: 4px; }
+    .help-doc-row a { color: var(--link); text-decoration: none; }
+    .help-doc-row a:hover { text-decoration: underline; }
+
+    /* Rerun */
+    .rerun-row { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+    .rerun-row label { font-size: 12px; color: var(--text-mute); min-width: 140px; font-weight: 500; }
+    select { padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--card); font-family: inherit; font-size: 13px; color: var(--text); cursor: pointer; min-width: 240px; }
+    .rerun-actions { display: flex; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); display: none; align-items: flex-start; justify-content: center; z-index: 100; padding: 60px 16px 16px; overflow-y: auto; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: var(--card); border-radius: 12px; padding: 22px; width: 100%; max-width: 520px; box-shadow: 0 24px 60px rgba(0,0,0,0.2); }
+    .modal-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .modal-title { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: 0.02em; }
+    .modal-meta { font-family: "SF Mono", monospace; font-size: 12px; color: var(--text-faint); }
+    .modal-section { margin-bottom: 14px; }
+    .modal-section-title { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--text); display: flex; align-items: baseline; gap: 8px; }
+    .modal-section-title .hint { font-weight: 400; color: var(--text-faint); font-size: 11px; }
+    .radio-group { display: flex; flex-direction: column; gap: 6px; }
+    .radio-group.row-h { flex-direction: row; gap: 20px; }
+    .radio-row { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; user-select: none; }
+    .radio-row input { accent-color: var(--accent); }
+    textarea { width: 100%; border: 1px solid var(--border-strong); border-radius: 6px; padding: 8px 10px; font-family: inherit; font-size: 13px; resize: vertical; min-height: 56px; color: var(--text); background: var(--card); }
+    textarea:focus { outline: none; border-color: var(--accent); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+    .mat-content { background: var(--code-bg); padding: 14px 16px; border-radius: 6px; font-family: "SF Mono", monospace; font-size: 12px; white-space: pre; line-height: 1.65; overflow-x: auto; }
+    .mat-meta-grid { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin-bottom: 14px; font-size: 13px; }
+    .mat-meta-grid > span:nth-child(odd) { color: var(--text-faint); font-size: 12px; }
+
+    /* Footer note */
+    .footer-note { max-width: 1080px; margin: 24px auto 0; padding: 12px 16px; font-size: 12px; color: var(--text-faint); text-align: center; font-family: "SF Mono", monospace; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <h1>source2video · ToyNode Console</h1>
+        <div class="artifact-id">artifact: 01_basic_run_2026-05-12_a3f2c1</div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-icon" onclick="showHelp()" title="使用说明 (?)" aria-label="使用说明">?</button>
+        <button class="btn">← 返回</button>
+        <button class="btn btn-primary">⟳ 重跑</button>
+      </div>
+    </div>
+
+    <!-- 心智图 · 节点工作流 -->
+    <div class="flowmap">
+      <div class="flowmap-title">节点工作流 <span class="hint">当前跑批状态 · 悬浮 ? 查看功能说明</span></div>
+
+      <div class="flowmap-row">
+        <div class="flow-node">
+          <button class="flow-help" type="button" aria-label="Case 说明">?</button>
+          <div class="flow-tooltip">跑批的<strong>输入实例</strong>：一段 markdown + <code>metadata.yaml</code>。入仓必经 git+CLI：<code>lint → register</code>，自动按 case_id 哈希分桶到 <strong>train(70%) / holdout(30%)</strong>，sha256 入 manifest。<span class="doc-ref">详见 04-handbook §2.0</span></div>
+          <div class="flow-head"><span class="flow-icon">📥</span><span class="flow-name">Case</span></div>
+          <div class="flow-stat">01_basic.md · 312 字</div>
+          <div class="flow-status ok">✓ 已加载</div>
+        </div>
+        <span class="flow-arrow">+</span>
+        <div class="flow-node">
+          <button class="flow-help" type="button" aria-label="物料说明">?</button>
+          <div class="flow-tooltip"><strong>5 类驱动节点行为的可版本化资产</strong>：<code>prompts</code> / <code>rubrics</code> / <code>schemas</code> / <code>style_guides</code> / <code>exemplars</code>。每个 artifact 必须内嵌所有用到的物料版本号 —— 这是反查"配方"的命根子（不变量 #1）。<span class="doc-ref">详见 01-architecture §2.2</span></div>
+          <div class="flow-head"><span class="flow-icon">📦</span><span class="flow-name">物料</span></div>
+          <div class="flow-stat">6 件 · toy/v1.0</div>
+          <div class="flow-status ok">✓ 已注入</div>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-node">
+          <button class="flow-help" type="button" aria-label="ToyNode 执行说明">?</button>
+          <div class="flow-tooltip">Node Runtime 一次完整执行：<strong>渲染 prompt → LLM call → Pydantic 校验 → tenacity 重试</strong>。所有 LLM call 必经 Langfuse trace（不变量 #2）+ Decision Trace 字段（不变量 #4）。失败保留中间产物可恢复。<span class="doc-ref">详见 01 §2.1 / §2.4</span></div>
+          <div class="flow-head"><span class="flow-icon">⚙️</span><span class="flow-name">ToyNode 执行</span></div>
+          <div class="flow-stat">1 LLM call · 3.4s · 1.2K tok</div>
+          <div class="flow-status ok">✓ 完成 · trace 入库</div>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-node">
+          <button class="flow-help" type="button" aria-label="产物说明">?</button>
+          <div class="flow-tooltip">Node 的<strong>输出 Artifact</strong>：schema 合规 + 内嵌所有物料版本号 + 可在新物料下重跑得到 diff。Node 之间不互读 Artifact，只通过 Case 或上游 plan 中介（不变量 #9）。<span class="doc-ref">详见 01 §1 Node 契约</span></div>
+          <div class="flow-head"><span class="flow-icon">📄</span><span class="flow-name">产物</span></div>
+          <div class="flow-stat">3 points · schema 合规</div>
+          <div class="flow-status ok">✓ 已生成</div>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-node warn">
+          <button class="flow-help" type="button" aria-label="评估归因说明">?</button>
+          <div class="flow-tooltip"><strong>LLM-as-judge with attribution</strong>：每条 rubric 维度 pass/fail 必须输出 <code>violated_rule_ref</code> + <code>anchor</code> + <code>citation</code> + <code>thinking</code>。缺任一字段 → 该次直接判失败（不变量 #3）。Judge 模型 ≥ generator 同代同模型。<span class="doc-ref">详见 01 §2.3</span></div>
+          <div class="flow-head"><span class="flow-icon">⚖️</span><span class="flow-name">评估归因</span></div>
+          <div class="flow-stat">2 ✓ · 1 ⚠ format</div>
+          <div class="flow-status warn">⚠ 待人工审</div>
+        </div>
+      </div>
+
+      <div class="flow-bend">⤵</div>
+
+      <div class="flowmap-row">
+        <div class="flow-node">
+          <button class="flow-help" type="button" aria-label="结构化反馈说明">?</button>
+          <div class="flow-tooltip"><strong>不接受自由文本</strong>，强制 schema：<code>location</code> / <code>verdict</code> / <code>likely_cause</code> / <code>severity</code>。<strong>单条不触发改物料</strong>——累积 ≥ 3 条同 likely_cause 才聚类触发（不变量 #15）。单条 = 噪声，三条同因 = 信号。<span class="doc-ref">详见 04 §3.2</span></div>
+          <div class="flow-head"><span class="flow-icon">💬</span><span class="flow-name">结构化反馈</span></div>
+          <div class="flow-stat">0 条 · 字段旁 [💬] 提交</div>
+          <div class="flow-status">阈值 ≥ 3 条同因</div>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-node idle">
+          <button class="flow-help" type="button" aria-label="改物料说明">?</button>
+          <div class="flow-tooltip"><strong>代价递增的升级路径</strong>：<br><code>L0</code> 改 prompt 措辞<br><code>L1</code> 加 / 改 exemplar<br><code>L2</code> 改 rubric anchor<br><code>L3</code> 改 schema<br><code>L4</code> 拆节点<br><code>L5</code> 重定义任务<br>同层撞 K=3 轮无改进 → 强制升级（不变量 #16 · Bounded Budget）。死磕 = 完美过拟合。<span class="doc-ref">详见 04 §4</span></div>
+          <div class="flow-head"><span class="flow-icon">✏️</span><span class="flow-name">改物料 (L0–L5)</span></div>
+          <div class="flow-stat">L0 · 1/3 轮预算</div>
+          <div class="flow-status">未触发 · 等聚类</div>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-node idle">
+          <button class="flow-help" type="button" aria-label="双向 Gate 验证说明">?</button>
+          <div class="flow-tooltip">物料 bump 前必须 <strong>train + holdout 双跑</strong>：<br>① <strong>train pass 率改进 ≥ Δ</strong>（默认 Δ=0，至少不退）<br>② <strong>holdout 任一 rubric 维度不退化</strong><br>任一不满足 → CI 阻塞合并（不变量 #14）。物料迭代期禁止访问 holdout（不变量 #13）。防过拟合。<span class="doc-ref">详见 04 §5</span></div>
+          <div class="flow-head"><span class="flow-icon">⚖</span><span class="flow-name">双向 Gate 验证</span></div>
+          <div class="flow-stat">train ↑ + holdout 不退</div>
+          <div class="flow-status">待 bump 触发</div>
+        </div>
+        <span class="flow-arrow">→</span>
+        <div class="flow-node idle">
+          <button class="flow-help" type="button" aria-label="下一轮说明">?</button>
+          <div class="flow-tooltip">双向 Gate 通过 → <strong>git commit + changelog</strong>（含 <code>fix-of</code> / <code>layer</code> / <code>gate</code> 三字段）→ 新 baseline → 反馈累积进入下一轮闭环。<br><br>完整闭环跑通一次 = MVP 出口判据 #8。<span class="doc-ref">详见 02-acceptance §5</span></div>
+          <div class="flow-head"><span class="flow-icon">🔄</span><span class="flow-name">下一轮</span></div>
+          <div class="flow-stat">toy/v1.0 → v1.1</div>
+          <div class="flow-status">闭环</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Materials -->
+    <div class="card" id="card-materials">
+      <div class="card-title">物料 <span class="hint">点击徽章查看 diff / 历史版本</span></div>
+      <div class="mat-list">
+        <span class="mat-badge" onclick="showMatDiff('prompts/toy/extract@v1.0')">prompts/toy/extract@v1.0</span>
+        <span class="mat-badge" onclick="showMatDiff('rubrics/toy@v1.0')">rubrics/toy@v1.0</span>
+        <span class="mat-badge" onclick="showMatDiff('schemas/toy_artifact@v1.0')">schemas/toy_artifact@v1.0</span>
+        <span class="mat-badge" onclick="showMatDiff('style_guides/toy_voice@v1.0')">style_guides/toy_voice@v1.0</span>
+        <span class="mat-badge" onclick="showMatDiff('exemplars/ex_01')">exemplars: ex_01</span>
+        <span class="mat-badge" onclick="showMatDiff('exemplars/ex_02')">exemplars: ex_02</span>
+      </div>
+    </div>
+
+    <!-- Artifact -->
+    <div class="card" id="card-artifact">
+      <div class="card-title">产物 <span class="hint">Artifact · 内嵌物料版本号（不变量 #1）</span></div>
+      <ul class="artifact-points">
+        <li>
+          <span class="pt-num">1.</span>
+          <span class="pt-text">合成饮料的核心是低成本可控原料</span>
+          <button class="pt-feedback-btn" onclick="showFeedback('points[0]')">💬 反馈</button>
+        </li>
+        <li>
+          <span class="pt-num">2.</span>
+          <span class="pt-text">主要成分为水（80%）、糖（10%）、香精+色素</span>
+          <button class="pt-feedback-btn" onclick="showFeedback('points[1]', 'schema')">💬</button>
+        </li>
+        <li>
+          <span class="pt-num">3.</span>
+          <span class="pt-text">制作流程：过滤 → 配料 → 搅拌 → 冷藏</span>
+          <button class="pt-feedback-btn" onclick="showFeedback('points[2]')">💬</button>
+        </li>
+      </ul>
+      <div class="metadata">
+        <span>source_case</span><span>cases/train/01_basic.md</span>
+        <span>timestamp</span><span>2026-05-12 14:23:01</span>
+        <span>tokens</span><span>1,247 · latency 3.4s · cost $0.003</span>
+      </div>
+    </div>
+
+    <!-- Eval Attribution -->
+    <div class="card" id="card-eval">
+      <div class="card-title">评估归因 <span class="hint">Eval Attribution · 每条 pass/fail 必须可追溯到具体规则（不变量 #3）</span></div>
+
+      <div class="eval-row">
+        <div class="eval-header">
+          <span class="eval-icon pass">✓</span>
+          <span class="eval-name">clarity</span>
+          <span class="eval-verdict verdict-pass">PASS</span>
+          <span class="eval-judge">三个要点表述清晰，无歧义</span>
+        </div>
+        <div class="eval-detail">
+          <div class="eval-detail-row"><span class="eval-detail-key">anchor</span><span class="eval-detail-val"><a class="link" onclick="showMatDiff('rubrics/toy@v1.0')">rubrics/toy@v1.0#clarity_anchor_1</a></span></div>
+        </div>
+      </div>
+
+      <div class="eval-row">
+        <div class="eval-header">
+          <span class="eval-icon pass">✓</span>
+          <span class="eval-name">coverage</span>
+          <span class="eval-verdict verdict-pass">PASS</span>
+          <span class="eval-judge">覆盖原文 80%+ 主要内容</span>
+        </div>
+        <div class="eval-detail">
+          <div class="eval-detail-row"><span class="eval-detail-key">anchor</span><span class="eval-detail-val"><a class="link" onclick="showMatDiff('rubrics/toy@v1.0')">rubrics/toy@v1.0#coverage_anchor_2</a></span></div>
+        </div>
+      </div>
+
+      <div class="eval-row">
+        <div class="eval-header">
+          <span class="eval-icon fail">!</span>
+          <span class="eval-name">format</span>
+          <span class="eval-verdict verdict-fail">FAIL</span>
+          <span class="eval-judge">points[1] 含全角括号，schema 要求半角</span>
+        </div>
+        <div class="eval-detail">
+          <div class="eval-detail-row"><span class="eval-detail-key">violated_rule_ref</span><span class="eval-detail-val"><a class="link" onclick="showMatDiff('schemas/toy_artifact@v1.0')">schemas/toy_artifact@v1.0#format_rule_3</a></span></div>
+          <div class="eval-detail-row"><span class="eval-detail-key">citation_in_artifact</span><span class="eval-detail-val">points[1]:&quot;水（80%）、糖（10%）&quot;</span></div>
+          <div class="eval-detail-row"><span class="eval-detail-key">judge_thinking</span><span class="eval-detail-val prose">输出含全角圆括号（），schema 第 3 条要求所有数字标记使用半角。建议预处理 normalize 或在 prompt 中加入显式约束。</span></div>
+          <div class="eval-detail-row" style="margin-top: 6px;">
+            <span></span>
+            <span><button class="btn btn-sm" onclick="showFeedback('eval.format', 'schema')">💬 反馈此次失败</button></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Decision Trace -->
+    <div class="card" id="card-trace">
+      <details open>
+        <summary class="card-title" style="margin-bottom: 0;">决策追溯 <span class="hint">Decision Trace · LLM 凭啥这么写（不变量 #4）</span></summary>
+        <div class="trace-content">
+          <div class="trace-row"><span class="trace-key">prompt_template_id</span><span class="trace-val">prompts/toy/extract@v1.0</span></div>
+          <div class="trace-row"><span class="trace-key">rendered_prompt_diff</span><span class="trace-val">+278 字符（case content + style 注入）</span></div>
+          <div class="trace-row"><span class="trace-key">materials_injected</span><span class="trace-val">style_guide: toy_voice@v1.0#L1-L8</span></div>
+          <div class="trace-row"><span class="trace-key">exemplars_used</span><span class="trace-val">ex_01.yaml (similarity 0.72)</span></div>
+          <div class="trace-row"><span class="trace-key">llm_thinking_summary</span><span></span></div>
+          <div class="trace-thinking">I focused on three main aspects: cost-control, composition ratios, and process steps. Skipped the marketing tone present in source. Used ex_01 as anchor for list format.</div>
+          <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-sm" onclick="showRenderedPrompt()">▶ 查看完整 rendered prompt</button>
+            <button class="btn btn-sm" onclick="window.open('http://localhost:3000', '_blank')">↗ 在 Langfuse 中打开</button>
+            <span style="margin-left: auto; font-size: 11px; color: var(--text-faint); align-self: center;">trace_id: tr_2026-05-12_a3f2c1</span>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Metrics -->
+    <div class="card" id="card-metrics">
+      <div class="card-title">节点指标 <span class="hint">Node Metrics · 最近 7 次跑批</span></div>
+      <div class="metrics-grid">
+        <div class="metric">
+          <div class="metric-label">一次过率</div>
+          <div class="metric-value ok">5 / 7</div>
+          <div class="metric-sub">71% · train 集</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">撞墙预算</div>
+          <div class="metric-value">L0 · 1/3</div>
+          <div class="metric-sub">距强制升级还剩 2 轮</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">改物料队列</div>
+          <div class="metric-value">0</div>
+          <div class="metric-sub">触发阈值 ≥ 3 条同归因</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">平均 token</div>
+          <div class="metric-value">1.2K</div>
+          <div class="metric-sub">每条 case</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">平均延迟</div>
+          <div class="metric-value">3.4s</div>
+          <div class="metric-sub">每条 case</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">平均成本</div>
+          <div class="metric-value">$0.004</div>
+          <div class="metric-sub">每条 case</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rerun -->
+    <div class="card" id="card-rerun">
+      <div class="card-title">重跑 <span class="hint">Rerun · 内部调 s2v run CLI（UI 仅作壳）</span></div>
+      <div class="rerun-row">
+        <label>物料版本</label>
+        <select>
+          <option>toy/v1.0（当前）</option>
+          <option>toy/v0.9</option>
+        </select>
+      </div>
+      <div class="rerun-row">
+        <label>测试用例</label>
+        <select>
+          <option>01_basic.md（当前）</option>
+          <option>02_short.md</option>
+          <option>03_long.md</option>
+          <option>04_with_code.md</option>
+          <option>05_unicode.md</option>
+        </select>
+      </div>
+      <div class="rerun-actions">
+        <button class="btn btn-primary">⟳ 重跑</button>
+        <button class="btn">⚖ 重跑并与当前对比</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer-note">
+    prototype.html · 视觉定稿 · 真实实施 = streamlit run nodes/toy/ui/console.py
+  </div>
+
+  <!-- Feedback Modal -->
+  <div class="modal-overlay" id="feedbackModal">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-head">
+        <span class="modal-title">提交反馈</span>
+        <span class="modal-meta" id="feedbackLocation">location: points[0]</span>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">判定 <span class="hint">verdict</span></div>
+        <div class="radio-group row-h">
+          <label class="radio-row"><input type="radio" name="verdict" value="good"> good · 好</label>
+          <label class="radio-row"><input type="radio" name="verdict" value="bad" checked> bad · 差</label>
+          <label class="radio-row"><input type="radio" name="verdict" value="minor_nit"> minor_nit · 小瑕疵</label>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">可能归因 <span class="hint">likely_cause · 聚类归因·受限标签</span></div>
+        <div class="radio-group">
+          <label class="radio-row"><input type="radio" name="cause" value="style"> style · 风格</label>
+          <label class="radio-row"><input type="radio" name="cause" value="prompt"> prompt · 提示词</label>
+          <label class="radio-row"><input type="radio" name="cause" value="schema" id="cause-schema"> schema · 结构</label>
+          <label class="radio-row"><input type="radio" name="cause" value="rubric"> rubric · 评估维度</label>
+          <label class="radio-row"><input type="radio" name="cause" value="exemplar"> exemplar · 范例</label>
+          <label class="radio-row"><input type="radio" name="cause" value="single-case"> single-case · 单例噪声</label>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">严重度 <span class="hint">severity</span></div>
+        <div class="radio-group row-h">
+          <label class="radio-row"><input type="radio" name="severity" value="high"> high · 高</label>
+          <label class="radio-row"><input type="radio" name="severity" value="medium" checked> medium · 中</label>
+          <label class="radio-row"><input type="radio" name="severity" value="low"> low · 低</label>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">问题描述 <span class="hint">issue · ≤ 200 字</span></div>
+        <textarea placeholder="schema 没强制半角符号，全角圆括号混入"></textarea>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">期望结果 <span class="hint">expected · 可选 ≤ 200 字</span></div>
+        <textarea placeholder="schema 加 regex 校验或预处理 normalize"></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('feedbackModal')">取消</button>
+        <button class="btn btn-primary">提交反馈</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Material diff Modal -->
+  <div class="modal-overlay" id="matModal">
+    <div class="modal" style="max-width: 640px;" onclick="event.stopPropagation()">
+      <div class="modal-head">
+        <span class="modal-title" id="matModalTitle">rubrics/toy@v1.0</span>
+        <span class="modal-meta">tag: business_policy</span>
+      </div>
+
+      <div class="mat-meta-grid">
+        <span>当前版本</span><span class="mono">v1.0</span>
+        <span>历史版本</span><span style="color: var(--text-faint);">（无，bootstrap 例外）</span>
+        <span>创建时间</span><span class="mono">2026-05-12</span>
+      </div>
+
+      <div class="modal-section">
+        <div class="modal-section-title">内容 <span class="hint">content</span></div>
+        <div class="mat-content" id="matContent">version: 1.0
+tag: business_policy
+dimensions:
+  - name: clarity
+    anchors:
+      pass: "要点表述清晰，无歧义"
+      fail: "要点措辞模糊或自相矛盾"
+  - name: coverage
+    anchors:
+      pass: "覆盖原文 80%+ 主要内容"
+      fail: "遗漏关键段落或主题"
+  - name: format
+    anchors:
+      pass: "全部半角符号 + schema 合规"
+      fail: "含全角 / 编号缺失 / 嵌套层级超 2 层"</div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('matModal')">关闭</button>
+        <button class="btn">📋 git log</button>
+        <button class="btn btn-primary">📝 在 $EDITOR 中编辑</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rendered Prompt Modal -->
+  <div class="modal-overlay" id="promptModal">
+    <div class="modal" style="max-width: 760px;" onclick="event.stopPropagation()">
+      <div class="modal-head">
+        <span class="modal-title">完整 rendered prompt</span>
+        <span class="modal-meta">最终发给 LLM 的字符串 · 1,089 字符 ≈ 312 tokens</span>
+      </div>
+
+      <div class="mat-meta-grid">
+        <span>template</span><span class="mono">prompts/toy/extract@v1.0</span>
+        <span>注入物料</span><span class="mono">style_guides/toy_voice@v1.0#L1-L8</span>
+        <span>范例</span><span class="mono">exemplars/ex_01 (similarity 0.72)</span>
+        <span>case</span><span class="mono">cases/train/01_basic.md</span>
+      </div>
+
+      <div class="seg-block role">
+        <div class="seg-label"><span>SYSTEM</span><span class="src">role · system message</span></div>
+      </div>
+
+      <div class="seg-block tpl">
+        <div class="seg-label"><span>template 主体</span><span class="src">← prompts/toy/extract@v1.0</span></div>
+        <div class="seg-body">你是一个 markdown 内容要点提取器。
+
+任务：从以下文本中抽取 3 个要点。
+约束：
+  1. 每个要点 ≤ 30 字
+  2. 全部使用半角符号
+  3. 输出符合 schemas/toy_artifact@v1.0</div>
+      </div>
+
+      <div class="seg-block injected">
+        <div class="seg-label"><span>注入物料</span><span class="src">← style_guides/toy_voice@v1.0#L1-L8</span></div>
+        <div class="seg-body">[风格指引]
+voice:
+  tone: neutral_technical
+  avoid: 营销腔 / 学术腔 / 第二人称呼吁
+  prefer: 名词主导 / 具体数字 / 短句</div>
+      </div>
+
+      <div class="seg-block exemplar">
+        <div class="seg-label"><span>few-shot 范例</span><span class="src">← exemplars/ex_01.yaml (similarity 0.72)</span></div>
+        <div class="seg-body">[范例]
+输入: 珍珠奶茶起源于台湾 1980 年代，由春水堂研发...
+输出:
+  - "珍珠奶茶起源于台湾 1980 年代"
+  - "主要成分为红茶、奶精、木薯粉珍珠"
+  - "标准制作温度 65-75°C，糖度可调"</div>
+      </div>
+
+      <div class="seg-block role">
+        <div class="seg-label"><span>USER</span><span class="src">role · user message</span></div>
+      </div>
+
+      <div class="seg-block case">
+        <div class="seg-label"><span>case 内容</span><span class="src">← cases/train/01_basic.md · 312 字符</span></div>
+        <div class="seg-body">请抽取以下文本的 3 个要点：
+
+合成饮料是一种以工业原料配制而成的非天然饮品。其核心价值在于低成本与可控原料供应——绕开了天然原料的季节性、运输和保质期问题。
+
+典型配方中，水约占 80%，糖（含甜味剂）占 10%，剩余 10% 为香精、色素、防腐剂、酸度调节剂等添加剂。
+
+制作流程上分四步：原水过滤除杂 → 配料按比例混合 → 高速搅拌均匀 → 冷藏静置以稳定风味。</div>
+      </div>
+
+      <div class="seg-block output">
+        <div class="seg-label"><span>输出格式指令</span><span class="src">← schemas/toy_artifact@v1.0</span></div>
+        <div class="seg-body">[输出格式]
+返回 JSON 对象，符合 schemas/toy_artifact@v1.0：
+{
+  "points": ["...", "...", "..."]
+}</div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal('promptModal')">关闭</button>
+        <button class="btn" onclick="copyPrompt()">📋 复制全文</button>
+        <button class="btn btn-primary" onclick="window.open('http://localhost:3000', '_blank')">↗ 在 Langfuse 中打开</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help Modal -->
+  <div class="modal-overlay" id="helpModal">
+    <div class="modal" style="max-width: 640px;" onclick="event.stopPropagation()">
+      <div class="modal-head">
+        <span class="modal-title">使用说明</span>
+        <span class="modal-meta">ToyNode Console · 作者活体地图</span>
+      </div>
+
+      <div class="help-section">
+        <p style="color: var(--text-mute);">这个 console 是给<strong style="color: var(--text);">作者本人</strong>用的——让你几周不碰也能立刻拾回这个节点的状态。不是协作 UI、不是新人 onboarding 工具。详见 <code>docs/05-ui-spec.md §0</code>。</p>
+      </div>
+
+      <div class="help-section">
+        <h3>日常 4 动作循环</h3>
+        <ul>
+          <li><span class="num" style="margin-right: 6px;">1</span><strong>跑批</strong>：终端跑 <code>s2v run toy --cases ...</code></li>
+          <li><span class="num" style="margin-right: 6px;">2</span><strong>审产物</strong>：看「评估归因」和「决策追溯」→ 字段旁 [💬] 提反馈</li>
+          <li><span class="num" style="margin-right: 6px;">3</span><strong>改物料</strong>：按 L0→L5 升级路径，先一次过率分诊（详见 <code>04-handbook §4.1</code>）</li>
+          <li><span class="num" style="margin-right: 6px;">4</span><strong>验证</strong>：<code>s2v eval regression</code> 双向 Gate（train + holdout 都看）</li>
+        </ul>
+      </div>
+
+      <div class="help-section">
+        <h3>主要按钮</h3>
+        <ul>
+          <li><strong>⟳ 重跑</strong>：UI 仅作壳，内部调 <code>s2v run</code> CLI</li>
+          <li><strong>💬 反馈</strong>：填结构化表单，落 <code>nodes/toy/feedback/&lt;id&gt;.yaml</code> 入 git</li>
+          <li><strong>物料徽章</strong>：点击看版本和内容；编辑必经 git（UI 不在浏览器写物料文件）</li>
+          <li><strong>📝 在 $EDITOR 中编辑</strong>：触发本地编辑器；改完物料必走 Promote Pipeline</li>
+          <li><strong>▶ 查看完整 rendered prompt</strong>：决策追溯卡片底部 —— 看最终发给 LLM 的字符串</li>
+        </ul>
+      </div>
+
+      <div class="help-section">
+        <h3>三条铁律 <span style="font-size: 11px; font-weight: 400; color: var(--text-faint);">写在墙上 (04-handbook §9)</span></h3>
+        <div class="help-rule"><strong>① 单条反馈不立即改 prompt</strong>。≥ 3 条同 likely_cause 才触发改物料（不变量 #15）。单条 = 噪声。</div>
+        <div class="help-rule"><strong>② 物料 bump 必须 train 改进 + holdout 不退化双满足</strong>。单向 = 过拟合（不变量 #14）。</div>
+        <div class="help-rule"><strong>③ 撞 K=3 轮无改进 → 强制升级 L0→L5</strong>。死磕 = 假装在工作，业务永远等不到（不变量 #16）。</div>
+      </div>
+
+      <div class="help-section">
+        <h3>想看更详细的</h3>
+        <div class="help-doc-row">📘 <a href="../../../docs/04-handbook.md">docs/04-handbook.md</a> · 用户手册（怎么用）</div>
+        <div class="help-doc-row">🎨 <a href="../../../docs/05-ui-spec.md">docs/05-ui-spec.md</a> · UI 规格</div>
+        <div class="help-doc-row">📐 <a href="../../../docs/01-architecture.md">docs/01-architecture.md</a> · 框架本体 + 16 条不变量</div>
+        <div class="help-doc-row">📝 <a href="../../../docs/02-acceptance.md">docs/02-acceptance.md</a> · MVP 出口判据</div>
+        <div class="help-doc-row">🗂️ <a href="../../../docs/ADR.md">docs/ADR.md</a> · 决策记录</div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-primary" onclick="closeModal('helpModal')">明白了</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const matContents = {
+      'prompts/toy/extract@v1.0': {
+        tag: 'capability_gap',
+        body: `version: 1.0
+tag: capability_gap
+created_at: 2026-05-12
+role: system
+template: |
+  你是一个 markdown 内容要点提取器。
+
+  任务：从以下文本中抽取 3 个要点。
+  约束：
+    1. 每个要点 ≤ 30 字
+    2. 全部使用半角符号
+    3. 输出符合 schemas/toy_artifact@v1.0
+
+  输入：
+  {{ case_content }}`
+      },
+      'rubrics/toy@v1.0': {
+        tag: 'business_policy',
+        body: `version: 1.0
+tag: business_policy
+dimensions:
+  - name: clarity
+    anchors:
+      pass: "要点表述清晰，无歧义"
+      fail: "要点措辞模糊或自相矛盾"
+  - name: coverage
+    anchors:
+      pass: "覆盖原文 80%+ 主要内容"
+      fail: "遗漏关键段落或主题"
+  - name: format
+    anchors:
+      pass: "全部半角符号 + schema 合规"
+      fail: "含全角 / 编号缺失 / 嵌套层级超 2 层"`
+      },
+      'schemas/toy_artifact@v1.0': {
+        tag: 'channel_constraint',
+        body: `# schemas/toy_artifact.py
+from pydantic import BaseModel, Field
+from typing import List
+
+SCHEMA_VERSION = "1.0"
+
+class ToyArtifact(BaseModel):
+    version: str = Field(default="1.0")
+    points: List[str] = Field(min_length=3, max_length=3)
+    materials: dict
+
+    # format_rule_3: 所有数字标记使用半角符号
+    # （regex 校验或 normalize 预处理）`
+      },
+      'style_guides/toy_voice@v1.0': {
+        tag: 'business_policy',
+        body: `version: 1.0
+tag: business_policy
+voice:
+  tone: neutral_technical
+  avoid:
+    - 营销腔
+    - 学术腔
+    - 第二人称呼吁
+  prefer:
+    - 名词主导
+    - 具体数字
+    - 短句`
+      },
+      'exemplars/ex_01': {
+        tag: 'business_policy',
+        body: `id: ex_01
+created_at: 2026-05-10
+source_case: synthetic_milk_tea
+points:
+  - "珍珠奶茶起源于台湾 1980 年代"
+  - "主要成分为红茶、奶精、木薯粉珍珠"
+  - "标准制作温度 65-75°C，糖度可调"
+materials_used:
+  prompts: toy/extract@v0.9`
+      },
+      'exemplars/ex_02': {
+        tag: 'business_policy',
+        body: `id: ex_02
+created_at: 2026-05-11
+source_case: synthetic_coffee
+points:
+  - "意式浓缩需 9 bar 压力提取"
+  - "粉量标准 18-21g，水量 36-42g"
+  - "萃取时长 25-30 秒为黄金区间"
+materials_used:
+  prompts: toy/extract@v0.9`
+      }
+    };
+
+    function showFeedback(location, presetCause) {
+      document.getElementById('feedbackLocation').textContent = 'location: ' + location;
+      // reset
+      document.querySelectorAll('#feedbackModal input[type=radio]').forEach(r => {
+        if (r.name === 'verdict')   r.checked = (r.value === 'bad');
+        if (r.name === 'severity')  r.checked = (r.value === 'medium');
+        if (r.name === 'cause')     r.checked = (r.value === (presetCause || 'prompt'));
+      });
+      document.getElementById('feedbackModal').classList.add('show');
+    }
+
+    function showMatDiff(matId) {
+      document.getElementById('matModalTitle').textContent = matId;
+      const data = matContents[matId];
+      if (data) {
+        document.getElementById('matContent').textContent = data.body;
+        document.querySelector('#matModal .modal-meta').textContent = 'tag: ' + data.tag;
+      }
+      document.getElementById('matModal').classList.add('show');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('show');
+    }
+
+    function showHelp() {
+      document.getElementById('helpModal').classList.add('show');
+    }
+
+    function showRenderedPrompt() {
+      document.getElementById('promptModal').classList.add('show');
+    }
+
+    function copyPrompt() {
+      const blocks = document.querySelectorAll('#promptModal .seg-block');
+      const lines = [];
+      blocks.forEach(b => {
+        const label = b.querySelector('.seg-label > span:first-child').textContent;
+        const body = b.querySelector('.seg-body');
+        lines.push('### ' + label);
+        if (body) lines.push(body.textContent);
+        lines.push('');
+      });
+      const text = lines.join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = event.target;
+        const orig = btn.textContent;
+        btn.textContent = '✓ 已复制';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+      }).catch(() => alert('复制失败，浏览器可能阻止了 clipboard API。'));
+    }
+
+    document.querySelectorAll('.modal-overlay').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target === el) el.classList.remove('show');
+      });
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.show').forEach(el => el.classList.remove('show'));
+      }
+      // Shift+? 触发使用说明
+      if (e.key === '?' && !e.target.matches('textarea, input')) {
+        e.preventDefault();
+        showHelp();
+      }
+    });
+  </script>
+</body>
+</html>
