@@ -1,0 +1,126 @@
+## Context
+
+当前 UI 已证明“文档包生成工作台”不是最高层产品本质。它仍然成立，但应作为 `Output Profile` 挂在文本生产系统之下。真实业务问题是：用户有混乱素材、外部写作 skill、参考文章/转录稿、主管不稳定偏好，但需要稳定地产出可比较、可评分、可迭代的文本。
+
+产品应被设计为文本生产系统：
+
+```text
+Raw Input
+  → Start Context（Baseline / optional Skill）
+  → Quick Intake + Job Spec + Output Contract
+  → Precheck
+  → Content Brief + Writing Rule Candidate + Eval Profile
+  → Candidate Run
+  → Auto Eval + Human Selection Feedback
+  → Feedback Ledger + Rule Patch Drafts
+  → Next Generation Run + Rule Snapshot
+  → Finalize Export
+```
+
+核心约束：
+- 用户不应直接面对复杂 schema。
+- 输入可以混乱，但进入生成前必须被标准化。
+- 输出形态可以不同，但必须通过 Output Profile 表达；结构化讲解文档包是首个 Output Profile。
+- Eval Profile 第一轮不能为空，必须由系统默认规则 + Job Spec 派生规则 + 参考/偏好派生规则组成。
+- Writing Skill 是产品资产，不是一次性 prompt。
+
+## Goals / Non-Goals
+
+**Goals:**
+- 将产品主入口改为创建 Writing Job。
+- 保留结构化讲解文档包，将其定义为默认 Output Profile，而不是删除旧路径。
+- 将 Precheck 设计为第一层产品契约，产出固定结构。
+- 明确 Content Brief 与 Writing Skill Candidate 的边界：前者本期使用，后者可复用候选。
+- 建立自动 eval + 选中文本轻反馈 + 规则草稿的第一轮闭环。
+- 为后续 UI mock 提供清晰页面结构。
+
+**Non-Goals:**
+- 不在本 change 里实现真实 LLM 执行、真实相似度检测或真实 skill 发布仓库。
+- 不承诺自动从任意参考内容生成完美写作 skill。
+- 不把产品做成富文本编辑器。
+- 不让用户直接维护 Codex/Claude 格式的 `SKILL.md`。
+
+## Decisions
+
+### 决策 1：统一输入为 Job Spec
+
+用户可输入标题、底稿、参考文章、外部“写文章 skill”、主管要求等，但 UI 和系统内部统一归一到 `Job Spec`。
+
+最小结构：
+- `goal`：写什么、发布在哪里、目标受众。
+- `source`：事实、观点、底稿、链接、转录稿。
+- `writing_inputs`：参考文章、写作 skill、账号风格。
+- `constraints`：字数、禁忌、必须覆盖点。
+- `review_preferences`：主管要求、评分重点、历史偏好。
+
+理由：动态输入会导致复杂性爆炸。统一 Job Spec 让复杂输入先被收束，再进入固定流程。
+
+### 决策 2：Precheck 产出三件套
+
+Precheck 不只是清洗素材，而是产出：
+- `Content Brief`：本期写什么，事实/观点/约束/风险。
+- `Writing Skill Candidate`：本期抽取出的写法、结构、节奏、风格、禁忌。
+- `Eval Profile`：本轮临时评分标准。
+
+理由：如果 Precheck 只产出 brief，写作方法仍然会留在隐性 prompt 里，无法 eval、复用、发布。
+
+### 决策 3：Eval Profile 自动生成但可编辑
+
+用户创建 Job Spec 后，Precheck 页面必须提示“已自动生成本轮评分标准”。默认折叠，用户可展开修改权重、删除规则、加入主管禁忌。
+
+第一轮 Eval Profile 由三层组成：
+- 基础质量：通顺、完整、无明显废话。
+- 任务匹配：标题、渠道、字数、受众、素材覆盖。
+- 风格/偏好：参考写法、外部 writing skill、主管偏好。
+
+理由：第一轮 eval 不能为空；但如果强迫用户先写评分规则，会降低创建 Job 的效率。
+
+### 决策 4：Writing Skill 先是 Candidate，稳定后才 Publish
+
+外部写作 skill、参考文章和主管反馈先被编译为 `Writing Skill Candidate`。Candidate 只绑定当前 Job/轮次；经过多轮生成、自动 eval、人工反馈和风险复核后，才可进入发布设计。当前 baseline 原型不支持 UI 发布。
+
+未来发布条件至少包括：
+- 多轮表现稳定。
+- 人工反馈收敛。
+- 没有高风险相似表达。
+- 有版本说明和适用范围。
+
+理由：把一次参考内容直接发布为 skill 会污染资产库。
+
+### 决策 5：UI 是生产控制台，不是编辑器
+
+首页优先展示 Jobs、Precheck 状态、候选文本评分和 Skill 资产状态。编辑文本是局部动作，不是产品核心页面模型。
+
+理由：产品核心价值是生产、评分、筛选、沉淀，而不是替代 Notion/Docs。
+
+### 决策 6：讲解文档包是 Output Profile
+
+`plan / scripts / shots / visual_spec / qa_report` 不再定义产品顶层入口，而是作为 Writing Job 的默认 `Output Profile`。Job Spec 仍描述“写什么、给谁看、如何评审”；Output Profile 描述“最终如何包装和交付”。
+
+理由：这样保留原业务设计，同时避免产品被单一产物类型锁死。未来可以增加普通长文、决策复盘、公众号稿、视频脚本文案等 Output Profile。
+
+## Risks / Trade-offs
+
+- **Precheck 过重导致首次使用慢** → 用默认 Job Spec 和自动 Eval Profile；用户只确认，不必填 schema。
+- **Writing Skill Candidate 看起来像 prompt** → UI 用“写法资产”语言展示结构、节奏、禁忌、检查表，不展示内部 prompt。
+- **参考内容带来版权/过度仿写风险** → Precheck 和 Eval 必须显示相似表达风险，并明确“仿结构，不仿句子”。
+- **主管偏好不稳定导致 skill 震荡** → Review Memory 记录偏好版本和冲突，不直接覆盖已发布 skill。
+- **Eval Profile 误导用户以为是长期规则** → UI 明确标注“本轮临时评分标准”，稳定后才可沉淀。
+
+## Migration Plan
+
+1. 新增 OpenSpec spec，定义 Writing Job、Precheck、生成/eval 闭环、Writing Skill 生命周期。
+2. 更新 `doc-maker/ui` mock：L1 从 Episode 列表改为 Writing Job 工作台。
+3. 新增 Precheck preview 区：展示 Content Brief、Writing Skill Candidate、Eval Profile、风险。
+4. 新增生成结果区：多篇候选文本、自动评分、选中文本反馈、反馈账本和规则草稿。
+5. 新增定稿导出区：从候选文本中选择一个 Text Artifact 导出。
+6. 新增 Skill 资产区：Candidate、Published、Deprecated 状态说明；当前 baseline 不发布。
+6. 保留旧 Episode/diagnostic 页面，并把结构化讲解文档包解释为默认 Output Profile。
+
+回滚策略：保留当前 `promote-business-prototype` change 的文档和 mock diff，不归档旧文档前可恢复为文档包工作台。
+
+## Open Questions
+
+- Published Writing Skill 最终是否要兼容 Codex/Claude `SKILL.md` 格式，还是只导出内部 JSON/YAML？
+- 主管反馈是按人建 profile，还是按账号/项目建 profile？
+- 相似表达风险第一版用规则/LLM judge mock，还是接真实文本相似度算法？

@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { CheckCircle2, XCircle, ArrowRight } from "lucide-react";
 
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { nodes } from "@/lib/mock";
 
@@ -37,9 +36,6 @@ export function NodeGrid() {
                 {node.description}
               </p>
             </div>
-            <Badge variant="muted" className="font-mono">
-              {node.materials_version}
-            </Badge>
           </div>
 
           <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
@@ -47,8 +43,8 @@ export function NodeGrid() {
             <dd className="truncate font-mono" title={node.latest_artifact}>
               {node.latest_artifact}
             </dd>
-            <dt className="text-muted-foreground">7 日通过率</dt>
-            <dd className="font-mono">{node.pass_rate_7d}</dd>
+            <dt className="text-muted-foreground">readiness</dt>
+            <dd>{node.alive ? "可进入诊断" : "离线，需检查服务"}</dd>
           </dl>
 
           <div className="mt-4 flex justify-end">

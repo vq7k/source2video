@@ -15,12 +15,19 @@ interface Stage {
 }
 
 export function ProgressPipeline({ progress }: Props) {
+  const shotStatus: StageStatus =
+    progress.plan !== "done"
+      ? "pending"
+      : progress.shot.current >= progress.shot.total
+        ? "done"
+        : "running";
+
   const stages: Stage[] = [
     { key: "plan", label: "plan", status: progress.plan },
     {
       key: "shot",
       label: "shot",
-      status: progress.shot.current === progress.shot.total ? "done" : "running",
+      status: shotStatus,
       hint: `${progress.shot.current}/${progress.shot.total}`,
     },
     { key: "qa", label: "qa", status: progress.qa },

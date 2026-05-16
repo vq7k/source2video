@@ -10,6 +10,7 @@ import { DecisionTracePanel } from "@/components/l3/decision-trace-panel";
 import { NodeMetricsBar } from "@/components/l3/node-metrics-bar";
 import { RerunPanel } from "@/components/l3/rerun-panel";
 import { FeedbackDialog } from "@/components/l3/feedback-dialog";
+import { StoryboardReadiness } from "@/components/l3/storyboard-readiness";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,8 @@ export default async function ShotConsolePage({ params }: Props) {
           </Button>
         }
       />
+
+      <StoryboardReadiness scope="Shot 诊断页" artifactParam={a.artifact_id} />
 
       <section>
         <h3 className="mb-2 text-sm font-medium">

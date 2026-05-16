@@ -21,11 +21,9 @@ import {
 import {
   findEpisode,
   findEpisodeArtifacts,
-  findCrossRepoJson,
   type ArtifactScript,
   type ArtifactShotYaml,
   type ArtifactQaReport,
-  type CrossRepoJsonSample,
 } from "@/lib/mock";
 
 type ArtifactKind = "scripts" | "shots" | "qa-report";
@@ -86,11 +84,6 @@ export default async function ArtifactViewerPage({ params }: PageProps) {
               业务使用者视图
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono text-[11px]">
-              {artifacts.scripts.materials_version}
-            </Badge>
-          </div>
         </div>
         <div className="flex items-center gap-2">
           <Icon className="h-4 w-4 text-muted-foreground" />
@@ -107,83 +100,7 @@ export default async function ArtifactViewerPage({ params }: PageProps) {
       {artifact === "scripts" && <ScriptsView data={artifacts.scripts} />}
       {artifact === "shots" && <ShotsView data={artifacts.shots} />}
       {artifact === "qa-report" && <QaReportView data={artifacts.qa_report} />}
-
-      <CrossRepoJsonViewer episodeId={id} artifact={artifact} />
     </main>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 跨仓 JSON 契约样本（pipeline_io 输出 → astral-pipeline 仓）
-// 参 docs/repo-layout.md §2.2
-// ---------------------------------------------------------------------------
-
-function CrossRepoJsonViewer({
-  episodeId,
-  artifact,
-}: {
-  episodeId: string;
-  artifact: ArtifactKind;
-}) {
-  const crossRepo = findCrossRepoJson(episodeId);
-  if (!crossRepo) return null;
-
-  // 当前 viewer artifact 对应跨仓的哪个 JSON
-  const mapping: Record<ArtifactKind, CrossRepoJsonSample | undefined> = {
-    scripts: crossRepo.script,
-    shots: crossRepo.visual_spec,
-    "qa-report": crossRepo.qa,
-  };
-  const sample = mapping[artifact];
-  if (!sample) return null;
-
-  const label =
-    artifact === "scripts"
-      ? "script.json"
-      : artifact === "shots"
-        ? "visual_spec.json"
-        : "qa.json";
-
-  return (
-    <Collapsible>
-      <Card className="border-dashed">
-        <CollapsibleTrigger asChild>
-          <button className="flex w-full items-center justify-between gap-3 p-4 text-left">
-            <div className="flex items-center gap-2">
-              <Badge variant="muted" className="font-mono text-[10px]">
-                跨仓契约
-              </Badge>
-              <span className="text-sm font-medium">
-                查看跨仓 JSON 契约样本（{label}）
-              </span>
-              <span className="text-xs text-muted-foreground">
-                pipeline_io 输出形态 · 给 TTS / Remotion 用
-              </span>
-            </div>
-            <span className="text-xs text-muted-foreground">展开 ↓</span>
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div className="border-t px-4 py-4">
-            <p className="mb-2 text-xs">
-              路径：
-              <code className="ml-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
-                {sample.path}
-              </code>
-            </p>
-            <p className="mb-3 text-xs text-muted-foreground leading-relaxed">
-              这是经 <code className="font-mono">pipeline_io</code> 模块转换 +
-              sha256 校验后，写入 astral-pipeline 仓的真实跨仓格式。**上方** 你看到的是 doc-maker
-              内部可读格式（markdown / yaml）。**这里** 是给 TTS / Remotion 实际消费的 JSON。
-              参 <code className="font-mono">docs/repo-layout.md</code> §2.2。
-            </p>
-            <pre className="overflow-x-auto rounded bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">
-              {sample.content}
-            </pre>
-          </div>
-        </CollapsibleContent>
-      </Card>
-    </Collapsible>
   );
 }
 
@@ -204,7 +121,7 @@ function ScriptsView({ data }: { data: ArtifactScript }) {
         <p className="mt-1 text-xs text-muted-foreground">
           {data.episode_id} · 生成于 {data.generated_at}
         </p>
-        <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-3">
           <div>
             <span className="text-muted-foreground">总时长</span>
             <span className="ml-2 font-medium">
@@ -218,12 +135,6 @@ function ScriptsView({ data }: { data: ArtifactScript }) {
           <div>
             <span className="text-muted-foreground">字数</span>
             <span className="ml-2 font-medium">{totalWords}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">物料</span>
-            <span className="ml-2 font-mono text-[11px]">
-              {data.materials_version}
-            </span>
           </div>
         </div>
       </Card>
@@ -427,15 +338,15 @@ function QaReportView({ data }: { data: ArtifactQaReport }) {
       </Card>
 
       <section>
-        <h3 className="mb-3 text-sm font-medium">维度细则</h3>
+        <h3 className="mb-3 text-sm font-medium">检查结果</h3>
         <div className="space-y-2">
           {data.dimensions.map((d) => (
             <Card key={d.dimension} className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <h4 className="font-mono text-sm font-medium">
-                      {d.dimension}
+                    <h4 className="text-sm font-medium">
+                      {qaDimensionLabel(d.dimension)}
                     </h4>
                     <Badge
                       variant={d.verdict === "pass" ? "secondary" : "destructive"}
@@ -446,7 +357,7 @@ function QaReportView({ data }: { data: ArtifactQaReport }) {
                       ) : (
                         <XCircle className="mr-1 h-2.5 w-2.5" />
                       )}
-                      {d.verdict.toUpperCase()}
+                      {d.verdict === "pass" ? "通过" : "需处理"}
                     </Badge>
                   </div>
                   <p className="mt-1.5 text-sm leading-6 text-foreground/90">
@@ -460,10 +371,10 @@ function QaReportView({ data }: { data: ArtifactQaReport }) {
       </section>
 
       <section>
-        <h3 className="mb-2 text-sm font-medium">警告</h3>
+        <h3 className="mb-2 text-sm font-medium">需要处理</h3>
         {data.warnings.length === 0 ? (
           <Card className="p-4">
-            <p className="text-xs text-muted-foreground">无警告。</p>
+            <p className="text-xs text-muted-foreground">没有需要人工处理的问题。</p>
           </Card>
         ) : (
           <ul className="space-y-1.5">
@@ -472,29 +383,34 @@ function QaReportView({ data }: { data: ArtifactQaReport }) {
                 key={i}
                 className="rounded-md border bg-muted/30 px-3 py-2 text-sm"
               >
-                {w}
+                {actionableWarning(w)}
               </li>
             ))}
           </ul>
         )}
       </section>
-
-      <section>
-        <h3 className="mb-2 text-sm font-medium">物料快照</h3>
-        <Card className="p-4">
-          <div className="flex flex-wrap gap-1.5">
-            {data.materials_snapshot.map((m) => (
-              <Badge
-                key={m}
-                variant="outline"
-                className="font-mono text-[11px]"
-              >
-                {m}
-              </Badge>
-            ))}
-          </div>
-        </Card>
-      </section>
     </article>
   );
+}
+
+function qaDimensionLabel(dimension: string) {
+  const labels: Record<string, string> = {
+    cross_shot_consistency: "镜头衔接",
+    duration_alignment: "时长节奏",
+    terminology_consistency: "术语一致",
+    callback_coverage: "前后呼应",
+    style_drift: "风格一致",
+    transition_cohesion: "转场连贯",
+  };
+  return labels[dimension] ?? dimension;
+}
+
+function actionableWarning(warning: string) {
+  if (warning.includes("shot_03")) {
+    return "shot_03 节奏偏长：建议拆成“找邻居”和“投票/平均”两个镜头，或压缩示例解释。";
+  }
+  if (warning.includes("shot_05")) {
+    return "shot_05 节奏偏长：建议保留适用边界，删除重复总结，把下期预告压到 15 秒内。";
+  }
+  return warning;
 }

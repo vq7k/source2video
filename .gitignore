@@ -39,3 +39,4 @@ venv/
 traces/
 reports/
 .cache/
+doc-maker/ui/.writing-runs/

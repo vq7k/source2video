@@ -44,16 +44,7 @@ export function FeedbackDialog({ location, artifactId, trigger }: Props) {
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = () => {
-    // mock：直接显示 done state
     setSubmitted(true);
-    setTimeout(() => {
-      setOpen(false);
-      setTimeout(() => {
-        setSubmitted(false);
-        setIssue("");
-        setExpected("");
-      }, 300);
-    }, 1000);
   };
 
   return (
@@ -75,7 +66,7 @@ export function FeedbackDialog({ location, artifactId, trigger }: Props) {
             </span>
           </DialogTitle>
           <DialogDescription>
-            结构化反馈强制 5 层归因（schemas/reference.md）。30 秒填完。
+            当前只预览将写入的反馈，不会修改产品状态。
           </DialogDescription>
         </DialogHeader>
 
@@ -182,8 +173,11 @@ export function FeedbackDialog({ location, artifactId, trigger }: Props) {
             </p>
           </div>
         ) : (
-          <div className="py-8 text-center text-sm text-muted-foreground">
-            反馈已落 `nodes/&lt;name&gt;/feedback/fb_….yaml`，等待 git commit。
+          <div className="space-y-3 py-4 text-sm text-muted-foreground">
+            <p>将创建一条 git-backed feedback 记录；当前原型不写文件、不改变 Episode 状态。</p>
+            <pre className="overflow-x-auto rounded-md border bg-muted/30 p-3 font-mono text-[11px]">
+              {JSON.stringify({ artifactId, location, verdict, cause, severity, issue, expected }, null, 2)}
+            </pre>
           </div>
         )}
 
@@ -194,6 +188,21 @@ export function FeedbackDialog({ location, artifactId, trigger }: Props) {
             </Button>
             <Button onClick={handleSubmit} disabled={!issue.trim()}>
               提交反馈
+            </Button>
+          </DialogFooter>
+        )}
+        {submitted && (
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSubmitted(false);
+                setIssue("");
+                setExpected("");
+                setOpen(false);
+              }}
+            >
+              关闭
             </Button>
           </DialogFooter>
         )}

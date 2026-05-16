@@ -1,14 +1,70 @@
 # 07 · source2video 验收与测试方案
 
-> **阅读位置**：07 / 10（入口：[`README.md`](./README.md)）。**本文档定位**：框架 MVP 用户故事 + 验收标准 + 测试方案。
+> **阅读位置**：07 / 10（入口：[`README.md`](./README.md)）。**本文档定位**：验收基线。当前分为三条：Writing Production 验收（当前主线）、讲解文档包 Output Profile 验收与框架 ToyNode MVP 验收（历史 framework-first 基线）。
 >
-> 配套：[`02-architecture.md`](./02-architecture.md)（框架本体）、[`_future/business-design.md`](./_future/business-design.md)（业务案例：PPT→视频，第二轮才动）、[`00-glossary.md`](./00-glossary.md)（术语索引）。
+> 配套：[`business-console.md`](./business-console.md)（当前业务产品原型）、[`02-architecture.md`](./02-architecture.md)（框架本体）、[`_future/business-design.md`](./_future/business-design.md)（业务案例：PPT→视频背景）、[`00-glossary.md`](./00-glossary.md)（术语索引）。
 >
 > **节奏纪律**：所有验收按"轮次/能力/通过判据"组织，不按时间排期。
 
 ---
 
-## 0. 第一轮纪律：**测框架，不测业务**
+## -2. 当前验收基线：Writing Production
+
+当前主线已调整为 **Writing Job 文本生产系统**（见 [ADR-028](./ADRs/028.md) / OpenSpec `add-writing-production-system`）。
+
+一句话定位：
+
+> doc-maker 是把混乱素材、参考写法和评审偏好转成可批量生成、可评分、可迭代沉淀的文本生产系统。
+
+当前验收只看产品路径是否自洽：
+
+| # | 判据 | 说明 |
+|---|---|---|
+| 1 | L1 首页明确以 Writing Job 为单位 | 不要求用户理解节点、prompt、schema、trace |
+| 2 | Job Spec 有四类输入 | 目标、底稿、写法参考、评审偏好 |
+| 3 | Output Contract 明确短文本边界 | baseline 为 300-500 中文字、约 60-90 秒口播基准 |
+| 4 | Precheck 必须产出四块 | Content Brief、Writing Skill Candidate、Eval Profile、Risk List |
+| 5 | 第一轮 Eval Profile 非空 | 系统自动生成基础质量、任务匹配、风格偏好、风险扣分规则 |
+| 6 | 确认 Precheck 后才生成 | 风险未确认时不能直接进入批量 Draft |
+| 7 | 一次生成多篇候选 | 默认 3 个版本，每篇展示自动总分、score breakdown 和理由 |
+| 8 | 人工反馈最小化 | 阅读区选中文本打标签，自动进入 Feedback Ledger 和 Rule Patch |
+| 9 | 风险可见 | 相似表达、事实漂移、证据缺口、偏好冲突必须展示 |
+| 10 | 规则容量有上限 | Rule Patch draft 最多 5 条，Active Rule Snapshot 最多 10 条规则 |
+| 11 | 更新规则与重跑解耦 | 反馈只生成规则草稿；点击“运行下一批”才生成新候选，旧候选冻结 |
+| 12 | 定稿导出独立 | 评审候选区不导出，Finalize Export 只负责选择最终 Text Artifact |
+| 13 | Skill 生命周期明确 | candidate / ready-to-publish / published / blocked；当前 baseline 不发布 |
+| 14 | 技术导出降级为高级动作 | Codex/Claude `SKILL.md` 不出现在普通编辑流程 |
+
+下文 §-1 保留讲解文档包业务原型验收。它仍作为默认 Output Profile 存在，但不再锁死当前产品本质。
+
+---
+
+## -1. Output Profile 基线：讲解文档包原型
+
+本节记录上一轮 **business prototype** 验收基线（见 [ADR-027](./ADRs/027.md) / OpenSpec `promote-business-prototype`）。
+
+一句话定位：
+
+> doc-maker 是把一组源材料转换成可审阅、可追溯、可迭代的结构化讲解文档包的生成工作台。
+
+当前业务原型验收只看产品路径是否自洽：
+
+| # | 判据 | 说明 |
+|---|---|---|
+| 1 | L1 明确以 Episode 为单位 | 不要求用户理解节点、Materials、Trace、rubric |
+| 2 | `done` 必须有 outputs | `scripts / shots / visual_spec / qa_report` 至少有可查看入口 |
+| 3 | `running` 进度真实有序 | 下游阶段不能在上游完成前推进 |
+| 4 | `warn` 可决策 | 允许 accept/rerun/diagnostic handoff，但 accept 不得制造“done 无产出” |
+| 5 | `failed` 给出下一步 | Bounded Budget 这类失败不能提供普通一键 rerun |
+| 6 | 上传体现 git-thin 约束 | mock 也要展示 lint/register/commit/run trigger 的成功与失败路径 |
+| 7 | L1 默认隐藏框架内部 | 不展示 Materials、Decision Trace、Eval Attribution、rubric、跨仓 JSON |
+| 8 | L2/L3 标明诊断/故事板状态 | Plan/Shot/QA 页面不能暗示 backend ready |
+
+下文从 §0 开始保留 **framework ToyNode MVP 验收基线**。它仍有价值，但不再覆盖当前业务产品原型主线。
+
+---
+
+## 0. Framework MVP 历史基线：**测框架，不测业务**
 
 **MVP 验收只验"框架能力是否齐备"**。**不在 MVP 范围内的**：
 

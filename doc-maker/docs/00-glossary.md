@@ -75,12 +75,14 @@
 
 | 层 | 名称 | 谁用 | 单元 | 看什么 | 文档位置 |
 |---|---|---|---|---|---|
-| **L1** | **Business Console** | "使用者"（作者本人作为产品用户 / 未来非技术使用者） | **Episode** | 状态徽章 / 产出 / 错误跳转入口 | [`_future/business-console.md`](_future/business-console.md)（第二轮才动手） |
+| **L1** | **Business Console** | "使用者"（作者本人作为产品用户 / 未来非技术使用者） | **Writing Job** | 输入契约 / Precheck / 候选评审 / 规则反馈 / 定稿导出 | [`business-console.md`](business-console.md)（当前业务产品原型主线） |
 | **L2** | **Hub Console** | 作者运维视角 | **Node 集合** | 节点导航 / alive 指示 / 最近 artifact_id | [06-ui-spec](06-ui-spec.md) §2.0（拟） |
 | **L3** | **Per-Node Console** | 作者深度排查 | **单个 Node** | Artifact / Materials / Eval Attribution / Decision Trace / 反馈表单 / rerun / 节点指标 | [06-ui-spec](06-ui-spec.md) 主体 |
 
-**默认隐藏框架层**：L1 跑通的 Episode 不显示 L2/L3 链接；状态 = warn/fail 才暴露"→ 进入 X 节点 console"按钮。  
-**单向跳转**：L1 → L3（跳过 L2，L1 已知节点）；L2 → L3（作者运维入口）；**L2/L3 不反向引用 L1 概念**（Episode 不进框架抽象）。
+> 2026-05-16 更新：ADR-028 后，L1 当前主线从 Episode 文档包工作台抽象上移为 Writing Job 文本生产系统。Episode / 讲解文档包仍作为默认 Output Profile 的查看单元保留。
+
+**默认隐藏框架层**：L1 跑通的 Writing Job 不显示 L2/L3 链接；状态 = warn/fail 才暴露"→ 进入 X 节点 console"按钮。
+**单向跳转**：L1 → L3（跳过 L2，L1 已知节点）；L2 → L3（作者运维入口）；**L2/L3 不反向引用 L1 概念**（Writing Job / Episode 不进框架抽象）。
 
 出处：[ADR-010](ADRs/010.md)（per-node 禁止聚合）、[ADR-020](ADRs/020.md)（L2/L3 是作者活体地图）、[ADR-021](ADRs/021.md)（L1 上传走 git thin 前端）、[ADR-025](ADRs/025.md)（L1/L2/L3 解耦决策）、[不变量 #8](03-invariants.md)。
 
@@ -97,7 +99,7 @@
 | Eval Stack | Schema check + LLM-as-judge with attribution + Auto-judge Runner + Regression diff | [§2.3](02-architecture.md) |
 | Observability | Langfuse trace + Decision Trace + Eval Attribution 落盘 + 指标聚合 | [§2.4](02-architecture.md) |
 | Feedback Loop | 结构化反馈 schema + 聚类阈值 + 归因到 5 层 | [§2.5](02-architecture.md) |
-| Per-Node Console | 节点活体 UI（Streamlit ≤200 行） | [§2.6](02-architecture.md) |
+| Per-Node Console | L3 节点活体 UI（Next.js；一屏视觉密度） | [§2.6](02-architecture.md)、[ADR-026](ADRs/026.md) |
 
 （业务侧治理实践不在内核——见 [§2a](02-architecture.md)：评审校准 / 对照样本 / 多评审 / 相关性校验 / rubric 反演 5 件，框架可提供 CLI 工具但触发与解读由业务侧决定）
 

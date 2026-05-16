@@ -1,8 +1,8 @@
 # 02 · source2video 架构
 
-> **阅读位置**：02 / 09（入口：[`README.md`](./README.md)）。**本文档定位**：source2video 框架本体（业务无关）。
+> **阅读位置**：02 / 10（入口：[`README.md`](./README.md)）。**本文档定位**：source2video 框架本体（业务无关）。
 >
-> 配套：[`03-invariants.md`](./03-invariants.md)（16 主 + 3 子不变量，墙上贴的约束）、[`07-acceptance.md`](./07-acceptance.md)（框架 MVP 验收）、[`_future/business-design.md`](./_future/business-design.md)（PPT→视频 业务设计，框架的第一个 instance）、[`ADRs/`](./ADRs/)（决策记录）。当本文档与 business-design / ADR 冲突时，**以本文档为准**——business-design / ADR 在框架抽象层之下被降级为"业务案例参考"。
+> 配套：[`03-invariants.md`](./03-invariants.md)（16 主 + 3 子不变量，墙上贴的约束）、[`business-console.md`](./business-console.md)（当前 L1 业务产品原型 SOT）、[`07-acceptance.md`](./07-acceptance.md)（业务原型验收 + framework ToyNode 历史基线）、[`_future/business-design.md`](./_future/business-design.md)（PPT→视频 业务案例参考）、[`ADRs/`](./ADRs/)（决策记录）。当本文档与 business-console / ADR-027 冲突时，按 ADR-027 的路线调整解释：框架本体仍保持业务无关，当前推进顺序切到业务产品原型。
 
 ---
 
@@ -45,7 +45,7 @@
 
 ### 业务边界
 
-第一版只 dogfood 一个业务：**PPT/教材 → 讲解视频**（接 ai-engineer-roadmap 数据）。
+首个落地场景是讲解型内容，第一版 dogfood 数据来自 **PPT/教材 → 讲解视频**（接 ai-engineer-roadmap 数据）。
 框架内核不绑业务；但**不为想象中的第二业务做过早抽象**，等真出现第二业务再 generalize。
 
 ---
@@ -501,7 +501,7 @@ reviewer: alice
 
 **完整 UI spec + ASCII 原型图**：见 [`06-ui-spec.md`](./06-ui-spec.md)。
 
-**3 层 UI 架构补充**（[ADR-025](./ADRs/025.md)）：本节描述的 Per-Node Console 是 **L3 框架层**。其上还有 L2（Hub Console，作者运维入口）和 **L1（Business Console，业务层使用者入口）**——L1 跟框架解耦，以 Episode 为单元，**不进框架内核抽象**（Episode 是业务层概念，本节 §1 / §2 不动）。L1 完整设计 + ASCII 原型 + 7 条纪律见 [`_future/business-console.md`](./_future/business-console.md)（**第二轮才动手实施**，不在 MVP 出口判据范围）。
+**3 层 UI 架构补充**（[ADR-025](./ADRs/025.md)、[ADR-027](./ADRs/027.md)、[ADR-028](./ADRs/028.md)）：本节描述的 Per-Node Console 是 **L3 框架层**。其上还有 L2（Hub Console，作者运维入口）和 **L1（Business Console，业务层使用者入口）**——L1 跟框架解耦；当前主线以 Writing Job 为单元，Episode / 讲解文档包作为默认 Output Profile 的查看单元保留，**不进框架内核抽象**。L1 当前 SOT 见 [`business-console.md`](./business-console.md)。
 
 #### 2.6.1 节点级文档与代码目录（与 Console 同构）
 
@@ -652,13 +652,14 @@ plan → shot → qa
 |---|---|
 | `02-architecture.md`（本文） | **框架本体**，最高优先级。冲突以本文档为准 |
 | [`03-invariants.md`](./03-invariants.md) | **不变量墙**：16 主 + 3 子，从本文档 + ADR 沉淀。违反即视为框架损坏 |
-| [`07-acceptance.md`](./07-acceptance.md) | **框架 MVP 验收**：第一轮（测框架，不测业务）的 user story / AC / 出口判据 |
-| [`_future/business-design.md`](./_future/business-design.md) | **业务案例：PPT→视频**。降级为"第一个 dogfood 实例"，业务节点（Plan / ShotExecutionNode）的需求来源；第二轮才动 |
+| [`business-console.md`](./business-console.md) | **当前 L1 业务产品原型 SOT**：Writing Job 工作台、候选评审、反馈账本、规则快照、定稿导出 |
+| [`07-acceptance.md`](./07-acceptance.md) | **验收基线**：业务产品原型验收 + framework ToyNode 历史基线 |
+| [`_future/business-design.md`](./_future/business-design.md) | **业务案例：PPT→视频**。降级为"第一个 dogfood 实例"，业务节点（Plan / ShotExecutionNode）的需求来源；当前不作为主线 |
 | [`ADRs/`](./ADRs/) | **决策记录**。其中 ADR-001/003/004/008/009/010 已升级为框架不变量；ADR-002/005/006/007 仍适用于业务节点选型 |
 | [`01-quickstart.md`](./01-quickstart.md) | 启动 6 步（原 `04-handbook.md` §2.0.5） |
 | [`04-handbook.md`](./04-handbook.md) | 日常操作手册主体（L0–L5 撞墙、反馈、双向 Gate 验证） |
 | [`reference/cli.md`](./reference/cli.md) | CLI 速查（原 `04-handbook.md` §7） |
-| [`06-ui-spec.md`](./06-ui-spec.md) | Per-Node Console 完整 UI spec + ASCII 原型 |
+| [`06-ui-spec.md`](./06-ui-spec.md) | L2/L3 诊断层 Console UI spec + ASCII 原型 |
 | [`08-tech-stack.md`](./08-tech-stack.md) | 技术栈清单 + 包版本 + `.env.example` + `pyproject.toml` 草稿 |
 | [`_future/user-stories.md`](./_future/user-stories.md) | 第二轮业务侧 US |
 | [`_future/test-cases.md`](./_future/test-cases.md) | 第二轮业务侧 TC |

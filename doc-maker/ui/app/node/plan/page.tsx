@@ -9,12 +9,18 @@ import { DecisionTracePanel } from "@/components/l3/decision-trace-panel";
 import { NodeMetricsBar } from "@/components/l3/node-metrics-bar";
 import { RerunPanel } from "@/components/l3/rerun-panel";
 import { FeedbackDialog } from "@/components/l3/feedback-dialog";
+import { StoryboardReadiness } from "@/components/l3/storyboard-readiness";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { planArtifact } from "@/lib/mock";
 
-export default function PlanConsolePage() {
+interface PageProps {
+  searchParams?: Promise<{ artifact?: string }>;
+}
+
+export default async function PlanConsolePage({ searchParams }: PageProps) {
+  const artifactParam = (await searchParams)?.artifact;
   const a = planArtifact;
   const totalDuration = a.shots.reduce(
     (acc, s) => acc + s.target_duration_seconds,
@@ -27,6 +33,8 @@ export default function PlanConsolePage() {
         title="source2video · Plan 节点控制台"
         artifactId={a.artifact_id}
       />
+
+      <StoryboardReadiness scope="Plan 诊断页" artifactParam={artifactParam} />
 
       <section>
         <h3 className="mb-2 text-sm font-medium">

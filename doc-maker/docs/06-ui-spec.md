@@ -1,22 +1,22 @@
 # 06 · source2video UI 设计文档
 
-> **阅读位置**：06 / 10（入口：[`README.md`](./README.md)）。**本文档定位**：**L2 / L3 框架层 console** 的 UI 规格 + ASCII 原型 + 实施栈。**L1 业务层 console** 见 [`_future/business-console.md`](./_future/business-console.md)（第二轮才动手）。
+> **阅读位置**：06 / 10（入口：[`README.md`](./README.md)）。**本文档定位**：**L2 / L3 诊断层 console** 的 UI 规格 + ASCII 原型 + 实施栈。**当前业务产品主线（L1 Business Console）** 见 [`business-console.md`](./business-console.md)。
 >
 > 配套：[`02-architecture.md`](./02-architecture.md) §2.6 / §2.6.1（机制与目录约束）、[`07-acceptance.md`](./07-acceptance.md) US-12（验收 AC）、[`04-handbook.md`](./04-handbook.md) §3（用户操作流程）、[`00-glossary.md`](./00-glossary.md)（术语索引）、[`ADRs/025.md`](./ADRs/025.md)（L1/L2/L3 分层决策）。
 
 ---
 
-## 0. 立场：本文件讲框架层 console（L2/L3），不讲业务层（L1）
+## 0. 立场：本文件讲诊断层 console（L2/L3），不讲业务产品层（L1）
 
 source2video 有 3 层 UI（[ADR-025](./ADRs/025.md)）：
 
 | 层 | 名称 | 谁用 | 在哪定义 |
 |---|---|---|---|
-| L1 | Business Console | "使用者"（作者本人作为产品用户 / 非技术使用者） | [`_future/business-console.md`](./_future/business-console.md) |
-| L2 | Hub Console | 作者运维视角 | 本文件 §2.0（拟，第二轮带 L1 一起实施） |
-| L3 | Per-Node Console | 作者深度排查 | **本文件主体**（MVP 必须的 ToyNode Console 就是 L3） |
+| L1 | Business Console | "使用者"（作者本人作为产品用户 / 非技术使用者） | [`business-console.md`](./business-console.md)（当前产品主线） |
+| L2 | Hub Console | 作者运维视角 | 本文件：诊断导航 / readiness，不做 dashboard |
+| L3 | Per-Node Console | 作者深度排查 | 本文件主体：trace / eval / feedback / rerun 诊断闭环 |
 
-**本文件主要讲 L3 / L2 框架层 console，立场是给作者用的，不是给新人用的**。L1 业务使用者视角的所有设计纪律见 `_future/business-console.md`（第二轮才动手）。
+**本文件主要讲 L3 / L2 诊断层 console，立场是给作者用的，不是给业务使用者用的**。L1 产品视角的所有设计纪律见 [`business-console.md`](./business-console.md)。Plan / Shot / QA 诊断页在真实 artifact 接入前属于故事板，不代表 backend ready。
 
 ---
 

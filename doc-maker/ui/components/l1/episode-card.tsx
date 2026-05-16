@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { FileText, FolderOpen, ClipboardCheck, RefreshCw, ArrowRight, Eye, ChevronDown, ChevronRight } from "lucide-react";
+import { FileText, FolderOpen, ClipboardCheck, RefreshCw, ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,46 @@ function TechnicalDetail({ detail }: { detail: string }) {
   );
 }
 
+function hasCompleteArtifacts(episode: Episode): episode is Episode & {
+  artifacts: { scripts: string; shots: string; qa_report: string };
+} {
+  return Boolean(
+    episode.artifacts?.scripts &&
+      episode.artifacts.shots &&
+      episode.artifacts.qa_report,
+  );
+}
+
+function ArtifactButtons({ episode }: { episode: Episode }) {
+  if (!hasCompleteArtifacts(episode)) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button asChild variant="outline" size="sm">
+        <Link href={`/episode/${episode.id}/scripts`}>
+          <FileText className="mr-1.5 h-3 w-3" />
+          {episode.artifacts.scripts}
+        </Link>
+      </Button>
+      <Button asChild variant="outline" size="sm">
+        <Link href={`/episode/${episode.id}/shots`}>
+          <FolderOpen className="mr-1.5 h-3 w-3" />
+          {episode.artifacts.shots}
+        </Link>
+      </Button>
+      <Button asChild variant="outline" size="sm">
+        <Link href={`/episode/${episode.id}/qa-report`}>
+          <ClipboardCheck className="mr-1.5 h-3 w-3" />
+          {episode.artifacts.qa_report}
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
 export function EpisodeCard({ episode, onAccept, onRerun }: Props) {
+  const isBoundedBudgetFailure = episode.failure_kind === "bounded_budget";
+
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-4">
@@ -66,31 +105,7 @@ export function EpisodeCard({ episode, onAccept, onRerun }: Props) {
       {episode.status === "done" && episode.artifacts && (
         <>
           <Separator className="my-3" />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/episode/${episode.id}/scripts`}>
-                <FileText className="mr-1.5 h-3 w-3" />
-                {episode.artifacts.scripts}
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/episode/${episode.id}/shots`}>
-                <FolderOpen className="mr-1.5 h-3 w-3" />
-                {episode.artifacts.shots}
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/episode/${episode.id}/qa-report`}>
-                <ClipboardCheck className="mr-1.5 h-3 w-3" />
-                {episode.artifacts.qa_report}
-              </Link>
-            </Button>
-            <span className="ml-auto" />
-            <Button variant="ghost" size="sm" className="text-muted-foreground">
-              <Eye className="mr-1.5 h-3 w-3" />
-              完整查看
-            </Button>
-          </div>
+          <ArtifactButtons episode={episode} />
         </>
       )}
 
@@ -100,16 +115,24 @@ export function EpisodeCard({ episode, onAccept, onRerun }: Props) {
           <Separator className="my-3" />
           <p className="text-sm">{episode.user_message ?? episode.warn_summary}</p>
           {episode.technical_detail && <TechnicalDetail detail={episode.technical_detail} />}
+          {hasCompleteArtifacts(episode) && (
+            <div className="mt-3">
+              <p className="mb-2 text-xs text-muted-foreground">
+                已生成文档包，可先查看后再接受或重跑。
+              </p>
+              <ArtifactButtons episode={episode} />
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm">
               <Link
                 href={`/node/${episode.warn_node}${episode.warn_artifact_id ? `?artifact=${episode.warn_artifact_id}` : ""}`}
               >
                 <ArrowRight className="mr-1.5 h-3 w-3" />
-                {episode.warn_node === "qa" && "QA 节点控制台"}
-                {episode.warn_node === "plan" && "Plan 节点控制台"}
-                {episode.warn_node === "shot" && "Shot 节点控制台"}
-                {episode.warn_node === "toy" && "Toy 节点控制台"}
+                {episode.warn_node === "qa" && "QA 诊断入口"}
+                {episode.warn_node === "plan" && "Plan 诊断入口"}
+                {episode.warn_node === "shot" && "Shot 诊断入口"}
+                {episode.warn_node === "toy" && "Toy 诊断入口"}
               </Link>
             </Button>
             <span className="ml-auto" />
@@ -145,39 +168,41 @@ export function EpisodeCard({ episode, onAccept, onRerun }: Props) {
         </>
       )}
 
-      {/* failed: 错误 + 节点链接 + 重跑 */}
+      {/* failed: 错误 + 诊断交接；Bounded Budget 不给假重跑 */}
       {episode.status === "failed" && (
         <>
           <Separator className="my-3" />
           <p className="text-sm text-destructive">{episode.user_message ?? episode.error}</p>
           {episode.technical_detail && <TechnicalDetail detail={episode.technical_detail} />}
+          {episode.next_action && (
+            <p className="mt-2 rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              下一步：{episode.next_action}
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm">
               <Link
                 href={`/node/${episode.failed_node}${episode.failed_artifact_id ? `?artifact=${episode.failed_artifact_id}` : ""}`}
               >
                 <ArrowRight className="mr-1.5 h-3 w-3" />
-                {episode.failed_node === "plan" && "Plan 节点控制台"}
-                {episode.failed_node === "shot" && "Shot 节点控制台"}
-                {episode.failed_node === "qa" && "QA 节点控制台"}
-                {episode.failed_node === "toy" && "Toy 节点控制台"}
+                {isBoundedBudgetFailure && "打开诊断包"}
+                {!isBoundedBudgetFailure && episode.failed_node === "plan" && "Plan 诊断入口"}
+                {!isBoundedBudgetFailure && episode.failed_node === "shot" && "Shot 诊断入口"}
+                {!isBoundedBudgetFailure && episode.failed_node === "qa" && "QA 诊断入口"}
+                {!isBoundedBudgetFailure && episode.failed_node === "toy" && "Toy 诊断入口"}
               </Link>
             </Button>
-            <Button variant="ghost" size="sm">
-              查看追踪 ({episode.trace_id})
-            </Button>
             <span className="ml-auto" />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onRerun?.(episode.id)}
-            >
-              <RefreshCw className="mr-1.5 h-3 w-3" />
-              回炉重跑
-            </Button>
-            <Button variant="outline" size="sm">
-              回滚到 v0
-            </Button>
+            {!isBoundedBudgetFailure && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onRerun?.(episode.id)}
+              >
+                <RefreshCw className="mr-1.5 h-3 w-3" />
+                重新运行
+              </Button>
+            )}
           </div>
         </>
       )}

@@ -10,7 +10,7 @@
 
 | 子项目 | 状态 | 内容 | 入口 |
 |---|---|---|---|
-| **doc-maker** | 开发中（文档完备，零代码，准备实施 MVP） | PPT/教材 → 讲解视频文档（script + visual_spec + qa） | [`./doc-maker/`](./doc-maker/) |
+| **doc-maker** | 业务产品原型推进中（UI mock + OpenSpec 文档基线） | Writing Production 文本生成生产系统；讲解文档包是默认 Output Profile | [`./doc-maker/`](./doc-maker/) |
 | video-maker | TBD | 视觉决策 + Remotion 渲染编排（可能） | — |
 | tts-maker | TBD | 音频生成（可能复用旧 harness，不一定 source2video-shaped） | — |
 | s2v-core | **不存在** | 共享框架包——抽离条件 = 第二个 LLM workflow 子项目开工 | 见 [`docs/ADRs/023.md`](./docs/ADRs/023.md) |

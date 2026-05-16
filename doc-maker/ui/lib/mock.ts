@@ -12,6 +12,12 @@ import type {
 // L1 Episodes（4 个：done / warn / running / failed）
 // ============================================================================
 
+const episodeArtifactLinks = {
+  scripts: "scripts.md",
+  shots: "shots/",
+  qa_report: "qa_report.md",
+};
+
 export const episodes: Episode[] = [
   {
     id: "ml_lr_e04b",
@@ -21,11 +27,7 @@ export const episodes: Episode[] = [
     size: "2.4MB",
     rounds: 3,
     duration: "10:24",
-    artifacts: {
-      scripts: "scripts.md",
-      shots: "shots/",
-      qa_report: "qa_report.md",
-    },
+    artifacts: episodeArtifactLinks,
   },
   {
     id: "ml_knn_e02a",
@@ -41,6 +43,7 @@ export const episodes: Episode[] = [
     warn_summary: "QA 报告：duration_align FAIL ×2（shot_03 / shot_05 时长偏离 plan 预期超 25%）",
     warn_node: "qa",
     warn_artifact_id: "ml_knn_e02a_qa_run_2026-05-13_b1d4e5",
+    artifacts: episodeArtifactLinks,
   },
   {
     id: "ml_lr_e04c",
@@ -68,6 +71,8 @@ export const episodes: Episode[] = [
     failed_node: "plan",
     failed_artifact_id: "ml_dt_e05_plan_run_2026-05-13_c8e1a2",
     trace_id: "lf_trace_4f8a72c1",
+    failure_kind: "bounded_budget",
+    next_action: "进入 Plan 诊断包，人工确认拆分策略后再决定是否开新一轮。",
   },
 ];
 
@@ -915,6 +920,141 @@ export const mockArtifacts: Record<string, EpisodeArtifacts> = {
         "schemas/qa_report@v1.0",
       ],
     },
+  },
+};
+
+mockArtifacts.ml_knn_e02a = {
+  scripts: {
+    title: "KNN 算法基础",
+    episode_id: "ml_knn_e02a",
+    total_duration_seconds: 721,
+    shot_count: 5,
+    materials_version: "plan@v1.2 / shot@v1.0 / qa@v1.0 / ml_course@v1.2",
+    generated_at: "2026-05-13 11:18:40",
+    sections: [
+      {
+        shot_id: "shot_01",
+        intent: "hook",
+        heading: "shot_01 · hook（约 80s）",
+        body: "你在找一家没去过的餐厅时，最自然的办法不是先背公式，而是问：附近口味最像我喜欢的几家店是哪几家？KNN 的直觉也是这样：先看邻居，再做判断。",
+      },
+      {
+        shot_id: "shot_02",
+        intent: "setup",
+        heading: "shot_02 · 距离就是相似度（约 120s）",
+        body: "把每个样本放进特征空间以后，距离就成了相似度的代理。离得近，说明特征更像；离得远，说明差异更大。KNN 不提前训练复杂模型，它把判断推迟到查询发生的那一刻。",
+      },
+      {
+        shot_id: "shot_03",
+        intent: "mechanism",
+        heading: "shot_03 · 找 K 个邻居（约 180s）",
+        body: "新的样本进来后，算法会计算它和历史样本之间的距离，选出最近的 K 个邻居。分类任务看多数票，回归任务看平均值。这里的时长略偏长，需要人工确认是否拆成两个 shot。",
+      },
+      {
+        shot_id: "shot_04",
+        intent: "tradeoff",
+        heading: "shot_04 · K 太小和太大（约 110s）",
+        body: "K 太小，模型容易被噪声带偏；K 太大，局部结构会被抹平。KNN 的关键不是背诵公式，而是理解 K 在噪声和泛化之间的折中。",
+      },
+      {
+        shot_id: "shot_05",
+        intent: "close",
+        heading: "shot_05 · 适用边界（约 190s）",
+        body: "KNN 简单、直观、可解释，但预测时要算距离，数据量大时会慢。它适合作为理解机器学习相似度思想的第一站，但不适合作为所有问题的默认答案。这里也略超时，建议审阅节奏。",
+      },
+    ],
+  },
+  shots: [
+    {
+      shot_id: "shot_01",
+      intent: "hook",
+      target_duration_seconds: 80,
+      text: "你在找一家没去过的餐厅时，最自然的办法不是先背公式，而是问：附近口味最像我喜欢的几家店是哪几家？KNN 的直觉也是这样：先看邻居，再做判断。",
+      text_tts: "你在找一家没去过的餐厅时，最自然的办法不是先背公式，而是问：附近口味最像我喜欢的几家店是哪几家？KNN 的直觉也是这样：先看邻居，再做判断。",
+      notes: {
+        panels: [{ time_range: [0, 80], visual: "餐厅地图点位逐个浮现，最近的 3 个点高亮", narration_ref: "text[0:]" }],
+        transitions: ["地图点位 fade in，末尾 zoom 到特征坐标系"],
+      },
+    },
+    {
+      shot_id: "shot_02",
+      intent: "setup",
+      target_duration_seconds: 120,
+      text: "把每个样本放进特征空间以后，距离就成了相似度的代理。离得近，说明特征更像；离得远，说明差异更大。",
+      text_tts: "把每个样本放进特征空间以后，距离就成了相似度的代理。离得近，说明特征更像；离得远，说明差异更大。",
+      notes: {
+        panels: [{ time_range: [0, 120], visual: "二维散点图中，查询点与历史样本之间出现距离线", narration_ref: "text[0:]" }],
+        transitions: ["餐厅地图 morph 成二维散点图"],
+      },
+    },
+    {
+      shot_id: "shot_03",
+      intent: "mechanism",
+      target_duration_seconds: 180,
+      text: "新的样本进来后，算法会计算它和历史样本之间的距离，选出最近的 K 个邻居。分类任务看多数票，回归任务看平均值。",
+      text_tts: "新的样本进来后，算法会计算它和历史样本之间的距离，选出最近的 K 个邻居。分类任务看多数票，回归任务看平均值。",
+      notes: {
+        panels: [{ time_range: [0, 180], visual: "查询点周围出现 K=3 圆圈，多数类别投票", narration_ref: "text[0:]" }],
+        transitions: ["距离线收束成 K 邻域圆圈"],
+      },
+    },
+    {
+      shot_id: "shot_04",
+      intent: "tradeoff",
+      target_duration_seconds: 110,
+      text: "K 太小，模型容易被噪声带偏；K 太大，局部结构会被抹平。K 的选择是在噪声和泛化之间做折中。",
+      text_tts: "K 太小，模型容易被噪声带偏；K 太大，局部结构会被抹平。K 的选择是在噪声和泛化之间做折中。",
+      notes: {
+        panels: [{ time_range: [0, 110], visual: "K=1 / K=3 / K=9 三个视图并排比较", narration_ref: "text[0:]" }],
+        transitions: ["单个邻域复制成三列对比"],
+      },
+    },
+    {
+      shot_id: "shot_05",
+      intent: "close",
+      target_duration_seconds: 190,
+      text: "KNN 简单、直观、可解释，但预测时要算距离，数据量大时会慢。它适合理解相似度思想，但不适合作为所有问题的默认答案。",
+      text_tts: "KNN 简单、直观、可解释，但预测时要算距离，数据量大时会慢。它适合理解相似度思想，但不适合作为所有问题的默认答案。",
+      notes: {
+        panels: [{ time_range: [0, 190], visual: "优点和限制左右分栏，最后收束到下一节预告", narration_ref: "text[0:]" }],
+        transitions: ["对比视图 fade out，出现总结卡"],
+      },
+    },
+  ],
+  qa_report: {
+    episode_id: "ml_knn_e02a",
+    title: "KNN 算法基础",
+    shot_total: 5,
+    shot_pass: 3,
+    overall_verdict: "fail",
+    generated_at: "2026-05-13 11:20:05",
+    total_duration_seconds: 721,
+    target_duration_seconds: 600,
+    duration_delta_pct: 20.2,
+    dimensions: [
+      {
+        dimension: "duration_alignment",
+        verdict: "fail",
+        detail: "shot_03 与 shot_05 超出计划时长较多，建议拆分或压缩讲解密度。",
+      },
+      {
+        dimension: "cross_shot_consistency",
+        verdict: "pass",
+        detail: "餐厅类比、距离、K 邻居和 K 值折中形成完整递进。",
+      },
+      {
+        dimension: "terminology_consistency",
+        verdict: "pass",
+        detail: "KNN、距离、邻居、投票等术语使用稳定。",
+      },
+    ],
+    warnings: ["shot_03 时长偏离计划", "shot_05 时长偏离计划"],
+    materials_snapshot: [
+      "rubrics/qa/episode@v1.0",
+      "rubrics/plan@v1.1",
+      "rubrics/shot/text@v1.0",
+      "style_guides/ml_course@v1.2",
+    ],
   },
 };
 

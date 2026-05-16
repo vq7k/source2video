@@ -8,6 +8,7 @@ import { DecisionTracePanel } from "@/components/l3/decision-trace-panel";
 import { NodeMetricsBar } from "@/components/l3/node-metrics-bar";
 import { RerunPanel } from "@/components/l3/rerun-panel";
 import { FeedbackDialog } from "@/components/l3/feedback-dialog";
+import { StoryboardReadiness } from "@/components/l3/storyboard-readiness";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,12 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { qaArtifact } from "@/lib/mock";
 
-export default function QaConsolePage() {
+interface PageProps {
+  searchParams?: Promise<{ artifact?: string }>;
+}
+
+export default async function QaConsolePage({ searchParams }: PageProps) {
+  const artifactParam = (await searchParams)?.artifact;
   const a = qaArtifact;
 
   return (
@@ -32,6 +38,8 @@ export default function QaConsolePage() {
           </Badge>
         }
       />
+
+      <StoryboardReadiness scope="QA 诊断页" artifactParam={artifactParam} />
 
       <section>
         <h3 className="mb-2 text-sm font-medium">物料（Materials）</h3>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, Scale, Loader2 } from "lucide-react";
+import { RefreshCw, Scale } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,11 +32,10 @@ export function RerunPanel({
 }: Props) {
   const [version, setVersion] = useState(defaultVersion ?? materialVersions[0]);
   const [caseId, setCaseId] = useState(defaultCase ?? caseOptions[0]);
-  const [running, setRunning] = useState(false);
+  const [previewed, setPreviewed] = useState(false);
 
   const handleRerun = () => {
-    setRunning(true);
-    setTimeout(() => setRunning(false), 1800);
+    setPreviewed(true);
   };
 
   return (
@@ -78,22 +77,23 @@ export function RerunPanel({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button onClick={handleRerun} disabled={running}>
-          {running ? (
-            <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-1.5 h-3 w-3" />
-          )}
-          {running ? "调 s2v run ..." : "重跑"}
+        <Button onClick={handleRerun}>
+          <RefreshCw className="mr-1.5 h-3 w-3" />
+          预览重跑动作
         </Button>
-        <Button variant="outline" disabled={running}>
+        <Button variant="outline" onClick={handleRerun}>
           <Scale className="mr-1.5 h-3 w-3" />
-          重跑并对比当前
+          预览对比动作
         </Button>
-        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-          {`subprocess.run([\"s2v\", \"run\", \"${node}\", \"--case\", \"${caseId}\", \"--materials\", \"${version}\"])`}
-        </span>
       </div>
+      {previewed && (
+        <div className="mt-3 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+          <p>当前仅预览 CLI/git-backed action，不会修改产品状态。</p>
+          <code className="mt-2 block font-mono text-[11px]">
+            {`s2v run ${node} --case ${caseId} --materials ${version}`}
+          </code>
+        </div>
+      )}
     </Card>
   );
 }

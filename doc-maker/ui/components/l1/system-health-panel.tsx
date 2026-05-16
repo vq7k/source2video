@@ -39,10 +39,7 @@ export function SystemHealthPanel() {
                 ) : (
                   <XCircle className="h-3 w-3" />
                 )}
-                框架 {allAlive ? "正常" : "1 节点离线"}
-              </span>
-              <span className="font-mono text-xs text-muted-foreground">
-                · 物料：plan@v1.2 shot@v1.0 qa@v1.0 toy@v1.0
+                生成服务 {allAlive ? "正常" : "需要诊断"}
               </span>
             </div>
             {open ? (
@@ -55,7 +52,7 @@ export function SystemHealthPanel() {
         <CollapsibleContent className="border-t bg-muted/20 px-4 py-3">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              业务层（L1）默认隐藏框架层。需要看节点级状态请到总览控制台（L2）。
+              业务层默认只展示可行动状态。需要排查时进入诊断总览。
             </p>
             <Button asChild variant="outline" size="sm">
               <Link href="/hub">

@@ -3,6 +3,7 @@
 export type EpisodeStatus = "done" | "warn" | "running" | "failed";
 
 export type StageStatus = "done" | "pending" | "running" | "failed";
+export type FailureKind = "bounded_budget" | "runtime" | "upload";
 
 export interface EpisodeProgress {
   plan: StageStatus;
@@ -39,6 +40,8 @@ export interface Episode {
   failed_node?: NodeName;
   failed_artifact_id?: string;
   trace_id?: string;
+  failure_kind?: FailureKind;
+  next_action?: string;
   // 两层文案（ADR-025 #4：L1 不展示 Materials / DT / EA / rubric 分布）
   user_message?: string; // L1 给使用者的人话
   technical_detail?: string; // 框架技术细节（折叠或仅 L3 显示）

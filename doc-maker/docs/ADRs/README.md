@@ -49,6 +49,18 @@
 | [ADR-025](025.md) | 业务层 Console（L1）· 业务层与框架层 UI 解耦 | 采纳 |
 | [ADR-026](026.md) | UI 实施栈从 Streamlit 改为 Next.js（全栈统一） | 采纳 |
 
+### v4（业务产品原型主线，2026-05-15）
+
+| ID | 标题 | 状态 |
+|---|---|---|
+| [ADR-027](027.md) | 当前主线从 framework-first MVP 调整为业务产品原型 | 采纳 |
+
+### v5（Writing Production 主线，2026-05-15）
+
+| ID | 标题 | 状态 |
+|---|---|---|
+| [ADR-028](028.md) | 当前主线从讲解文档包抽象上移为 Writing Production | 采纳 |
+
 ### 仓级（转发 stub）
 
 | ID | 标题 | 真正位置 |
@@ -107,6 +119,16 @@ ADR-025 业务层 Console（L1）解耦               ← 3 层 UI 架构（L1/L
    ├─→ 修正 ADR-021（允许 git thin 前端）
    ├─≠ ADR-010 per-node 禁止聚合              ← 不冲突：L1 单元是 Episode，不是 Node
    └─≠ ADR-020 UI 为作者活体地图               ← 并列：L1 是使用者视角，L2/L3 是作者视角
+
+ADR-027 业务产品原型成为当前主线
+   ├─→ ADR-025 L1/L2/L3 解耦继续成立
+   ├─→ ADR-026 Next.js 全栈 UI 成为原型承载
+   └─≠ ADR-011 framework-first MVP             ← 降级为历史基线，不再覆盖当前主线
+
+ADR-028 Writing Production 成为当前主线
+   ├─→ ADR-027 业务产品原型继续成立，讲解文档包保留为默认 Output Profile
+   ├─→ ADR-025 L1/L2/L3 解耦继续成立，L1 单元改为 Writing Job
+   └─→ ADR-009 评审治理重新成为产品核心闭环
 ```
 
 **仓级 ADR（结构性，见 [`../../../docs/ADRs/`](../../../docs/ADRs/)）**：

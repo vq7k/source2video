@@ -4,6 +4,7 @@ import { ArrowLeft, RefreshCw, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StoryboardReadiness } from "@/components/l3/storyboard-readiness";
 import { planArtifact } from "@/lib/mock";
 
 export default function ShotNodeOverviewPage() {
@@ -39,6 +40,8 @@ export default function ShotNodeOverviewPage() {
       </header>
 
       <div className="mt-6 grid gap-4">
+        <StoryboardReadiness scope="Shot 总览页" />
+
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="flex gap-3 pt-6 text-sm leading-relaxed">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />

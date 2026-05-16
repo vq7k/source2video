@@ -25,14 +25,14 @@ export default function HubConsolePage() {
         </div>
         <h1 className="text-xl font-semibold">doc-maker · 总览控制台</h1>
         <p className="text-xs text-muted-foreground">
-          作者运维视角 · ≤ 50 行内容密度（06-ui-spec §2.0）· 禁止聚合（ADR-010 / 不变量 #8）：本页只列 4 个节点的在线指示 + 最近 artifact_id，不展示节点内部
+          诊断导航视角 · 本页只展示在线指示、最近 artifact_id 与 readiness，不展示 pass-rate / materials analytics
         </p>
       </header>
 
       <NodeGrid />
 
       <footer className="mt-10 text-center text-xs text-muted-foreground">
-        L2 单向跳转 → L3 · L2 不反向引用 L1 概念（Episode 不进框架抽象）
+        L2 单向跳转 → L3 · 只做诊断入口，不做跨节点分析看板
       </footer>
     </main>
   );
