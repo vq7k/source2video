@@ -23,7 +23,7 @@
 | 1 | L1 首页明确以 Writing Job 为单位 | 不要求用户理解节点、prompt、schema、trace |
 | 2 | Job Spec 有四类输入 | 目标、底稿、写法参考、评审偏好 |
 | 3 | Output Contract 明确短文本边界 | baseline 为 300-500 中文字、约 60-90 秒口播基准 |
-| 4 | Precheck 必须产出四块 | Content Brief、Writing Skill Candidate、Eval Profile、Risk List |
+| 4 | Precheck 必须产出四块 | Content Brief、Writing Rules Candidate、Eval Profile、Risk List |
 | 5 | 第一轮 Eval Profile 非空 | 系统自动生成基础质量、任务匹配、风格偏好、风险扣分规则 |
 | 6 | 确认 Precheck 后才生成 | 风险未确认时不能直接进入批量 Draft |
 | 7 | 一次生成多篇候选 | 默认 3 个版本，每篇展示自动总分、score breakdown 和理由 |
@@ -32,8 +32,23 @@
 | 10 | 规则容量有上限 | Rule Patch draft 最多 5 条，Active Rule Snapshot 最多 10 条规则 |
 | 11 | 更新规则与重跑解耦 | 反馈只生成规则草稿；点击“运行下一批”才生成新候选，旧候选冻结 |
 | 12 | 定稿导出独立 | 评审候选区不导出，Finalize Export 只负责选择最终 Text Artifact |
-| 13 | Skill 生命周期明确 | candidate / ready-to-publish / published / blocked；当前 baseline 不发布 |
+| 13 | Rule-to-Skill Package 生命周期明确 | Writing Rules Candidate 只作为规则候选；当前 baseline 不发布 Skill Package |
 | 14 | 技术导出降级为高级动作 | Codex/Claude `SKILL.md` 不出现在普通编辑流程 |
+| 15 | 初始化层保持轻量 | 已实现 Manual Rule Scope：Quick Intake + Reference Paste -> Writing Rule Scope；不做 Source Store / RAG |
+| 16 | 框架层记录可读取 | Run record 写入 `FrameworkNodeRunRecord`：scope extraction、precheck normalization、candidate generation/eval、feedback compilation |
+| 17 | 前置 LLM 进入统一 TraceSink | 新 run 的 `LLMCallTraceRecord` 必须记录 provider、model、prompt version、input refs、output artifact、eval result、run id、node run id、node type |
+| 18 | L2 可查看真实 run 诊断 | `/framework` 读取 `.writing-runs`，展示 NodeRun timeline、TraceSink contract check 和 LLM call payload |
+| 19 | LLM runtime 可配置可测试 | `/settings/llm` 支持 mock / Ollama / OpenAI-compatible；可加载模型；Test Call 成功和失败都写入 trace；API Key 不落盘 |
+| 20 | Scope 真实调用可感知 | L1 生成 Writing Rule Scope 后展示 provider、model、prompt version、trace id、latency |
+| 21 | 可回到新任务入口 | 读取最近 run 后，L1 可新建 Job 草稿且不删除历史 run record |
+| 22 | Precheck 真实调用可感知 | L1 生成 Precheck Candidate 后展示 Content Brief、Grounding Brief、Rules、Risks，以及 provider/model/trace/latency |
+| 23 | 真实调用等待可理解 | L1 运行 Scope / Precheck 时展示 active node、预计耗时、停止等待；Framework 显著标识 failed/fallback trace |
+| 24 | Core Eval 最小闭环 | Candidate auto eval 通过 `workflow-core/eval.ts` 产出 `CoreEvalRun`，Writing adapter 再映射回 L1 score breakdown |
+| 25 | 业务入口可打开观测 Lens | L1 “观测 / 执行详情”必须带 `runId / stage / nodeRunId / candidateId / traceId / returnTo`，不能跳到无条件日志页 |
+| 26 | Framework Lens 层级清晰 | Run 是父级，Node 是子级；页面默认选中可诊断节点，不把 Runs 和 Nodes 排成同级导航 |
+| 27 | Trace 深链能定位上下文 | 带 `traceId` 进入 `/framework` 时，必须反推选中对应 `nodeRunId` 并优先展示该 call 的输入输出 |
+| 28 | 候选深链能定位候选 | 带 `candidateId` 进入 `/framework` 时，候选列表必须置顶并标记当前候选；返回 L1 时保持原候选 |
+| 29 | Framework 响应式不裁剪主线 | 窄屏时 Run Picker 和 Trace Inspector 可折叠/下移，中央 Node Lens 不应被侧栏压缩到不可读 |
 
 下文 §-1 保留讲解文档包业务原型验收。它仍作为默认 Output Profile 存在，但不再锁死当前产品本质。
 

@@ -55,7 +55,7 @@ export function MaterialsBadges({ materials }: Props) {
                   {active.kind}/{active.name}@{active.version}
                 </DialogTitle>
                 <DialogDescription>
-                  {active.tag ? `tag: ${active.tag}` : "物料 diff 预览（mock）"}
+                  {active.tag ? `tag: ${active.tag}` : "物料变更预览"}
                 </DialogDescription>
               </DialogHeader>
               <div className="rounded-md bg-muted/40 p-3">

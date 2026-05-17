@@ -1,7 +1,10 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import type { ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { PanelImperativeHandle } from "react-resizable-panels";
 
 import {
 	AlertTriangle,
@@ -9,12 +12,9 @@ import {
 	BarChart3,
 	BookOpenCheck,
 	CheckCircle2,
-	CircleHelp,
-	CircleDot,
+  ChevronLeft,
   Download,
-	FileText,
-  LockKeyhole,
-  ShieldAlert,
+  Loader2,
   Sparkles,
   X,
 } from "lucide-react";
@@ -22,27 +22,51 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  LinearJobList,
+  LinearSidebar,
+  LinearSidebarRail,
+  LinearTopBar,
+  jobViewForRun,
+  runStateLabel,
+  type CenterMode,
+  type JobView,
+} from "@/components/writing-production/linear-shell";
 import {
-	Dialog,
-	DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  InfoRow,
+  StepMark,
+  WarningCallout,
+} from "@/components/writing-production/common";
+import {
+  DecisionQueuePanel,
+} from "@/components/writing-production/decision-panels";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  RULE_PATCH_DRAFT_LIMIT,
-  RULE_SNAPSHOT_RULE_LIMIT,
-} from "@/lib/writing-run-types";
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import type { FrameworkNodeRunRecord, LLMCallTraceRecord } from "@/lib/framework-run-types";
+import {
+  compileWritingRulePatch,
+  confirmWritingRun,
+  createWritingRunRecord,
+  deleteWritingFeedback,
+  deriveRuleScope,
+  finalizeWritingRunRecord,
+  listWritingRuns,
+  recordWritingFeedback,
+  runWritingGenerationBatch,
+} from "@/lib/writing-run-client";
 import type {
   CandidateRecord,
   CreateWritingRunInput,
@@ -50,11 +74,13 @@ import type {
   HumanFeedbackRecord,
   TextOutputContract,
   WritingJobSpec,
+  WritingRuleScopeItem,
+  WritingRuleScopeRecord,
   WritingRunRecord,
 } from "@/lib/writing-run-types";
 import { cn } from "@/lib/utils";
 
-type FlowStage = "context" | "precheck-ready" | "confirmed" | "finalize";
+type FlowStage = "intake" | "precheck" | "review" | "finalize";
 
 type JobSpec = WritingJobSpec;
 
@@ -62,7 +88,16 @@ type OutputContract = TextOutputContract;
 
 type QuickIntake = {
   raw: string;
+  referencePaste: string;
 };
+
+type RuntimeTaskKind =
+  | "scope_extraction"
+  | "precheck_normalization"
+  | "candidate_generation"
+  | "feedback_reasoning"
+  | "rule_patch_compilation"
+  | "generation_batch";
 
 type SelectionFeedbackDraft = {
   candidateId: string;
@@ -88,7 +123,7 @@ type BaselineCheck = {
   badge?: string;
 };
 
-type SkillOption = {
+type SkillPackageOption = {
   id: string;
   category: string;
   version: string;
@@ -102,21 +137,22 @@ const initialJobSpec: JobSpec = {
   goal:
     "写一篇给内部主管看的复盘文，目标是解释为什么从框架优先调整为文本生产闭环，并给出下一步决策建议。",
   source:
-    "已有 UI mock、OpenSpec 讨论记录、业务侧原型反馈；材料中缺少明确的主管评分样本。",
+    "已有 UI 讨论记录、OpenSpec 讨论记录、业务侧产品反馈；材料中缺少明确的主管评分样本。",
   writingReference:
-    "参考专业技术作者的结构：先给判断，再拆证据，最后给可执行下一步；外部写文章 skill 偏理性、低修辞、少口号。",
+    "参考专业技术作者的结构：先给判断，再拆证据，最后给可执行下一步；外部写作方法包 偏理性、低修辞、少口号。",
   reviewPreference:
     "主管审美不稳定。当前偏好：不要营销腔，不要泛泛谈 AI；标题克制，观点要可被追问。",
 };
 
 const initialQuickIntake: QuickIntake = {
   raw: "",
+  referencePaste: "",
 };
 
 const outputProfile = {
-  name: "structured explanation package",
-  summary: "保留原“源材料 -> 结构化讲解文档包”设计，作为当前 Writing Job 的默认交付形态。",
-  artifacts: ["plan", "scripts", "shots", "visual_spec", "qa_report"],
+  name: "短文本产物",
+  summary: "当前默认交付形态：短解释文本。下游 TTS、视觉指导和视频制作由独立节点处理。",
+  artifacts: ["short_text"],
 };
 
 const initialOutputContract: OutputContract = {
@@ -126,16 +162,16 @@ const initialOutputContract: OutputContract = {
   formatRules: "Markdown 正文；除非任务明确要求，不生成表格。",
   groundingRules: "每个关键判断必须能回指到底稿、用户输入或标注为待确认。",
   specialHandling: "不编造事实；不复制参考文句式；不确定内容标注低置信；复杂公式只标记为下游专项处理。",
-  downstreamHandoff: "输出短 Text Artifact；TTS 目标 60-90 秒；Video 在下游节点独立处理。",
+  downstreamHandoff: "输出短文本产物；TTS 目标 60-90 秒；视频在下游节点独立处理。",
 };
 
-const skillOptions: SkillOption[] = [
+const skillPackageOptions: SkillPackageOption[] = [
   {
-    id: "baseline-no-skill",
+    id: "baseline-no-package",
     category: "本次文本",
-    version: "Baseline / No Skill selected",
+    version: "Baseline / No Published Skill Package",
     status: "baseline mode",
-    description: "不套用历史类型，只根据本次 Quick Intake 和 Job Spec 生成临时 Writing Skill Candidate。",
+    description: "不套用历史类型，只根据本次快速输入和输入契约生成临时写作规则候选。",
     prefill: {
       writingReference: "",
       reviewPreference: "",
@@ -149,7 +185,7 @@ const skillOptions: SkillOption[] = [
     description: "内部决策复盘写法，强调判断、证据和下一步。",
     prefill: {
       writingReference:
-        "参考专业技术作者的结构：先给判断，再拆证据，最后给可执行下一步；外部写文章 skill 偏理性、低修辞、少口号。",
+        "参考专业技术作者的结构：先给判断，再拆证据，最后给可执行下一步；外部写作方法包 偏理性、低修辞、少口号。",
       reviewPreference:
         "主管审美不稳定。当前偏好：不要营销腔，不要泛泛谈 AI；标题克制，观点要可被追问。",
     },
@@ -172,130 +208,38 @@ const skillOptions: SkillOption[] = [
     category: "小红书口播稿",
     version: "小红书口播稿 frozen",
     status: "frozen",
-    description: "历史偏移较大，当前不推荐作为新 Job 起点。",
+    description: "历史偏移较大，当前不推荐作为新任务起点。",
     prefill: {
       writingReference:
         "历史口播样本只可参考节奏和信息密度，不复制句式；当前版本因偏移较大，默认不推荐继续开新主题。",
       reviewPreference:
-        "重点检查是否过度口语化、是否制造夸张承诺、是否与业务事实脱节；低置信内容不能沉淀为 Skill。",
+        "重点检查是否过度口语化、是否制造夸张承诺、是否与业务事实脱节；低置信内容不能沉淀为 Skill Package。",
     },
   },
 ];
 
 const autoFilledStack = [
-  ["Job Spec schema", "渲染输入区字段：标题、目标、底稿、写法参考、评审偏好。"],
-  ["Precheck schema", "初始化 Content Brief、Grounding Brief、Writing Rule Candidate、Risk Check。"],
-  ["Eval Profile seed", "初始化基础质量、任务匹配、风格偏好、风险扣分和权重。"],
-  ["Output Contract default", "默认 short explanatory text：300-500 中文字、60-90 秒口播基准、Markdown 格式和下游 handoff。"],
-  ["Writing constraints", "带入结构、语气、禁止项、相似表达边界。"],
-  ["Governance policy", "带入 low-confidence pass、Delayed Feedback、Retro Eval、Skill cleanup。"],
+  ["写作规则范围", "由快速输入和参考文本提炼结构、语气、禁忌、检查点，用户删减确认。"],
+  ["输入契约", "渲染输入区字段：标题、目标、底稿、写法参考、评审偏好。"],
+  ["生成前检查", "初始化内容摘要、依据边界、写作规则候选和风险检查。"],
+  ["评分口径", "初始化基础质量、任务匹配、风格偏好、风险扣分和权重。"],
+  ["输出契约", "默认短解释文本：300-500 中文字、60-90 秒口播基准、Markdown 格式和下游 handoff。"],
+  ["写作约束", "带入结构、语气、禁止项、相似表达边界。"],
+  ["治理策略", "带入低置信通过、延迟反馈、回溯评分和规则清理策略。"],
 ];
 
-const governanceRules = [
-  ["Low-confidence pass", "小偏移未被人工发现时，不直接沉淀为 Published Skill。"],
-  ["Delayed Feedback", "视频发布后反馈可绑定历史 Job，追加到评分账本。"],
-  ["Retro Eval", "审美变化或新经验出现后，用 Eval Profile v2 追加重评。"],
-  ["Skill cleanup", "污染规则需要降权、冻结、废弃或回滚；历史评分不覆盖，只追加版本。"],
-];
+const scopeKindLabel: Record<WritingRuleScopeItem["kind"], string> = {
+  structure: "结构",
+  tone: "语气",
+  prohibition: "禁忌",
+  checklist: "检查点",
+};
 
-const methodologyReferences = [
-  {
-    name: "Creative Brief",
-    role: "把目标、受众、关键信息和交付物收束成任务书。",
-    href: "https://www.elon.edu/u/university-communications/marketing-communications/creative-services/creative-brief/",
-  },
-  {
-    name: "Grounding",
-    role: "要求生成内容绑定底稿、事实来源和证据缺口。",
-    href: "https://cloud.google.com/vertex-ai/generative-ai/docs/grounding/overview",
-  },
-  {
-    name: "Structured Outputs",
-    role: "把交付物定义成稳定 Output Contract，而不是自由文本。",
-    href: "https://platform.openai.com/docs/guides/structured-outputs",
-  },
-  {
-    name: "Few-shot / Skill",
-    role: "用示例文章和外部 writing skill 约束写法模式。",
-    href: "https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/multishot-prompting",
-  },
-  {
-    name: "Eval-driven Development",
-    role: "先定义评分标准，再批量生成、比较和迭代。",
-    href: "https://platform.openai.com/docs/guides/evals",
-  },
-];
-
-const drafts: CandidateRecord[] = [
-  {
-    id: "static_candidate_1",
-    version: "Version 1",
-    title: "从文档包到文本生产：这次产品转向解决的不是页面问题",
-    summary: "先给定位判断，再解释输入区、检查区和 Eval Profile 如何降低输入复杂性。",
-    excerpt:
-      "这次调整不是把旧页面换一层壳，而是把产品对象从“产物”换成“生产闭环”。输出仍然是文本，不稳定的是输入素材、写法来源和评审偏好。",
-    total: 86,
-    humanScore: "8.5",
-    breakdown: {
-      quality: 27,
-      fit: 31,
-      style: 22,
-      risk: -4,
-    },
-    rationale: "覆盖完整，判断清楚；相似表达风险中等，标题可再收紧。",
-    risk: "相似表达：中；事实漂移：低",
-  },
-  {
-    id: "static_candidate_2",
-    version: "Version 2",
-    title: "先固定输入契约，再讨论生成质量",
-    summary: "把重点放在 Job Spec 和 Precheck，适合做给主管的短版说明。",
-    excerpt:
-      "如果输入仍然是标题、参考文、转录稿和口头偏好混在一起，后续任何 prompt 优化都会变成一次性手工劳动。Job Spec 的价值是先把复杂性收束。",
-    total: 82,
-    humanScore: "8.0",
-    breakdown: {
-      quality: 26,
-      fit: 29,
-      style: 23,
-      risk: -6,
-    },
-    rationale: "逻辑干净，但 Skill 生命周期解释不足；需要补发布条件。",
-    risk: "相似表达：低；事实漂移：中",
-  },
-  {
-    id: "static_candidate_3",
-    version: "Version 3",
-    title: "Writing Skill 不能从一篇参考文直接发布",
-    summary: "强调资产沉淀和风险治理，适合后续展开成产品设计说明。",
-    excerpt:
-      "参考文章提供的是写法信号，不是可直接复制的资产。它必须先进入 Candidate，经多轮 eval 和人工评分稳定后，才有资格被发布和复用。",
-    total: 78,
-    humanScore: "7.6",
-    breakdown: {
-      quality: 25,
-      fit: 27,
-      style: 21,
-      risk: -5,
-    },
-    rationale: "风险意识强，但对本期业务目标覆盖偏窄。",
-    risk: "相似表达：低；事实漂移：低",
-  },
-];
-
-const lifecycle = [
-  { state: "candidate", status: "active", note: "当前 v0.3，来自本轮 Precheck 与人工评分" },
-  { state: "ready-to-publish", status: "pending", note: "需要再 1 轮评分稳定证据" },
-  { state: "published", status: "locked", note: "暂无，不能被本轮反馈直接覆盖" },
-  { state: "blocked", status: "watch", note: "相似表达风险仍为中" },
-];
-
-const evidence = [
-  ["迭代轮次", "3 轮"],
-  ["平均人工分", "8.1 / 10"],
-  ["风险状态", "相似表达中，事实漂移低"],
-  ["版本说明", "收敛到内部决策复盘写法，暂不发布"],
-];
+const confidenceLabel: Record<WritingRuleScopeItem["confidence"], string> = {
+  low: "低置信",
+  medium: "中置信",
+  high: "高置信",
+};
 
 function escapeHtml(value: string) {
   return value
@@ -347,12 +291,12 @@ function buildCandidateDocHtml({
 </head>
 <body>
   <h1>${escapeHtml(candidate.title)}</h1>
-  <div class="meta">Run: ${escapeHtml(runId)} · Candidate: ${escapeHtml(candidate.id)} · Score: ${candidate.total}</div>
+  <div class="meta">任务: ${escapeHtml(runId)} · 候选: ${escapeHtml(candidate.id)} · 评分: ${candidate.total}</div>
   <div class="contract">
-    <strong>Job Spec</strong><br />
+    <strong>输入契约</strong><br />
     ${escapeHtml(jobSpec.title)}<br />
     ${escapeHtml(jobSpec.goal)}<br /><br />
-    <strong>Output Contract</strong><br />
+    <strong>输出契约</strong><br />
     ${escapeHtml(outputContract.artifactType)} · ${escapeHtml(outputContract.lengthRange)}<br />
     ${escapeHtml(outputContract.structure)}
   </div>
@@ -397,6 +341,19 @@ function analyzeSelectionFeedback(
     };
   }
 
+  if (verdict === "rejected") {
+    return {
+      candidateId: draft.id,
+      quote: normalizedQuote,
+      verdict,
+      businessReason: "风格不对",
+      likelyCause: "style",
+      issue: "这段表达不符合当前写法参考或评审偏好。",
+      expected: "重写为更克制、更贴近目标读者的表达。",
+      confidence: "medium",
+    };
+  }
+
   if (hasRiskWord || draft.risk.includes("事实漂移：中")) {
     return {
       candidateId: draft.id,
@@ -431,7 +388,7 @@ function analyzeSelectionFeedback(
       businessReason: "任务不准",
       likelyCause: "prompt",
       issue: "选中文本没有明显服务本轮沟通任务，可能造成跑题或重点漂移。",
-      expected: "重新贴合 Job Spec 的目标和受众，明确给主管的判断与下一步。",
+      expected: "重新贴合输入契约里的目标和受众，明确给主管的判断与下一步。",
       confidence: "medium",
     };
   }
@@ -459,60 +416,178 @@ const stageCopy: Record<
     draftsMetric: string;
   }
 > = {
-  context: {
-    badge: "start context",
-    description: "默认使用 Baseline；历史 Skill 只在明确复用时选择。",
-    nextTitle: "选择生产上下文",
-    nextHint: "Baseline 先服务本次任务；Category / Skill 负责复用历史写法，不作为默认前提。",
+  intake: {
+    badge: "intake",
+    description: "默认使用 Baseline；历史 Skill Package 只在明确复用时选择。",
+    nextTitle: "输入任务材料",
+    nextHint: "Baseline 先服务本次任务；Category / Skill Package 负责复用历史写法，不作为默认前提。",
     precheckMetric: "blocked",
     draftsMetric: "blocked",
   },
-  "precheck-ready": {
-    badge: "check ready",
+  precheck: {
+    badge: "precheck",
     description: "检查区已自动根据输入区加载；确认前不会生成候选。",
     nextTitle: "确认生成契约",
     nextHint: "修改左侧输入会自动刷新检查区；进入候选区的动作在检查区底部。",
     precheckMetric: "ready",
     draftsMetric: "blocked",
   },
-  confirmed: {
-    badge: "candidate ready",
+  review: {
+    badge: "review",
     description: "检查结果已确认，本轮候选文本可按同一评分标准比较。",
     nextTitle: "评审候选区",
     nextHint: "选中文本打标签后自动生成规则草稿；需要新结果时再运行下一批。",
-    precheckMetric: "confirmed",
+    precheckMetric: "review",
     draftsMetric: "3",
   },
   finalize: {
     badge: "finalize",
     description: "已停止本轮规则迭代，只选择最终版本并导出本次产物。",
     nextTitle: "定稿导出",
-    nextHint: "从当前批次选择 1 个 Text Artifact，然后导出 DOC。",
-    precheckMetric: "confirmed",
+      nextHint: "从当前批次选择 1 个文本产物，然后导出 DOC。",
+    precheckMetric: "review",
     draftsMetric: "final",
   },
 };
 
+const runtimeTaskCopy: Record<
+  RuntimeTaskKind,
+  {
+    title: string;
+    node: string;
+    body: string;
+    estimate: string;
+  }
+> = {
+  scope_extraction: {
+    title: "正在提炼写作规则范围",
+    node: "规则范围提炼",
+    body: "模型正在把快速输入和参考文本提炼成结构、语气、禁忌和检查点。",
+    estimate: "通常 15-40 秒；期间可以继续编辑，但编辑后需要重新生成规则范围。",
+  },
+  precheck_normalization: {
+    title: "正在运行生成前检查",
+    node: "生成前检查",
+    body: "模型正在把输入契约、输出契约和规则范围清洗成生成契约候选。",
+    estimate: "通常 15-40 秒；重跑会生成新 trace，不覆盖旧 run。",
+  },
+  candidate_generation: {
+    title: "正在生成候选",
+    node: "候选生成",
+    body: "模型正在按已确认检查、输出契约和规则快照生成候选正文，并写入 trace / eval scores。",
+    estimate: "通常 30-90 秒；旧候选不会被改写。",
+  },
+  feedback_reasoning: {
+    title: "正在记录反馈",
+    node: "反馈分析",
+    body: "模型正在根据选中文本、候选正文和标签归因反馈原因，再写入反馈账本。",
+    estimate: "通常 10-40 秒；反馈会先进入待处理队列。",
+  },
+  rule_patch_compilation: {
+    title: "正在编译规则草稿",
+    node: "规则草稿编译",
+    body: "模型正在把未处理反馈压缩成最多 5 条规则草稿。",
+    estimate: "通常 10-40 秒；不会改写历史候选。",
+  },
+  generation_batch: {
+    title: "正在运行下一批",
+    node: "下一批生成",
+    body: "系统正在应用规则草稿，生成新的规则快照，并调用模型生成候选批次。",
+    estimate: "通常 30-90 秒；规则更新和重跑是解耦的。",
+  },
+};
+
+const WORKBENCH_LAYOUT_STORAGE_KEY = "doc-marker.workbench.layout.v2";
+const DEFAULT_WORKBENCH_LAYOUT: Record<string, number> = {
+  "jobs-sidebar": 16,
+  "workbench-center": 58,
+  "job-inspector": 26,
+};
+
+function parseWorkbenchLayout(value: string | null) {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const layout = parsed as Record<string, unknown>;
+      const hasExpectedPanels = ["jobs-sidebar", "workbench-center", "job-inspector"].every(
+        (id) => typeof layout[id] === "number" && Number.isFinite(layout[id]) && layout[id] > 0,
+      );
+
+      if (hasExpectedPanels) {
+        return layout as Record<string, number>;
+      }
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function flowStageFromQuery(value: string | null): FlowStage | null {
+  return value === "intake" || value === "precheck" || value === "review" || value === "finalize" ? value : null;
+}
+
 export default function WritingProductionPage() {
+  return (
+    <Suspense fallback={<WritingProductionLoading />}>
+      <WritingProductionClient />
+    </Suspense>
+  );
+}
+
+function WritingProductionLoading() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#f7f6f2] text-sm text-zinc-500">
+      正在加载工作台...
+    </main>
+  );
+}
+
+function WritingProductionClient() {
+  const searchParams = useSearchParams();
+  const requestedRunId = searchParams.get("runId");
+  const requestedStage = flowStageFromQuery(searchParams.get("stage"));
+  const requestedCandidateId = searchParams.get("candidateId");
+  const runtimeAbortRef = useRef<AbortController | null>(null);
+  const sidebarPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const inspectorPanelRef = useRef<PanelImperativeHandle | null>(null);
 	const [spec, setSpec] = useState<JobSpec>(initialJobSpec);
 	const [outputContract, setOutputContract] = useState<OutputContract>(initialOutputContract);
 	const [quickIntake, setQuickIntake] = useState<QuickIntake>(initialQuickIntake);
-	const [stage, setStage] = useState<FlowStage>("context");
+	const [stage, setStage] = useState<FlowStage>("intake");
 	const [activeSource, setActiveSource] = useState<SourceKey | null>(null);
-	const [selectedSkillId, setSelectedSkillId] = useState(skillOptions[0].id);
+  const [centerMode, setCenterMode] = useState<CenterMode>("editor");
+  const [jobView, setJobView] = useState<JobView>("all");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(1280);
+  const [compactOverlay, setCompactOverlay] = useState<"inspector" | null>(null);
+  const [workbenchLayout, setWorkbenchLayout] = useState<Record<string, number> | undefined>(DEFAULT_WORKBENCH_LAYOUT);
+	const [selectedSkillPackageId, setSelectedSkillPackageId] = useState(skillPackageOptions[0].id);
+	const [ruleScope, setRuleScope] = useState<WritingRuleScopeRecord | null>(null);
 	const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 	const [finalizedCandidateId, setFinalizedCandidateId] = useState<string | null>(null);
 	const [activeRun, setActiveRun] = useState<WritingRunRecord | null>(null);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [availableRuns, setAvailableRuns] = useState<WritingRunRecord[]>([]);
 	const [runDirty, setRunDirty] = useState(false);
+	const [hasLoadedLatestRun, setHasLoadedLatestRun] = useState(false);
 	const [runtimeBusy, setRuntimeBusy] = useState(false);
+	const [runtimeTask, setRuntimeTask] = useState<RuntimeTaskKind | null>(null);
 	const [runtimeError, setRuntimeError] = useState<string | null>(null);
-	const selectedSkill = skillOptions.find((skill) => skill.id === selectedSkillId) ?? skillOptions[0];
-	const isBaselineSkill = selectedSkill.id === "baseline-no-skill";
-	const selectedSkillScope = isBaselineSkill ? "本次文本" : selectedSkill.category;
+	const selectedSkillPackage = skillPackageOptions.find((skill) => skill.id === selectedSkillPackageId) ?? skillPackageOptions[0];
+	const isBaselinePackage = selectedSkillPackage.id === "baseline-no-package";
+	const selectedRuleScope = isBaselinePackage ? "本次文本" : selectedSkillPackage.category;
 	const displayDrafts = useMemo(
 	  () => {
 	    if (!activeRun?.candidates.length) {
-	      return drafts;
+	      return [];
 	    }
 
 	    const latestGenerationRun = activeRun.generationRuns?.at(-1);
@@ -553,6 +628,166 @@ export default function WritingProductionPage() {
 	  [displayDrafts, finalizedCandidateId, selectedDraftIndex],
 	);
 	const finalizedDraft = displayDrafts[finalizedDraftIndex] ?? selectedDraft;
+  const precheckTrace = useMemo(
+    () =>
+      (activeRun?.llmTraces ?? [])
+        .slice()
+        .reverse()
+        .find((item) => item.nodeType === "precheck_normalization") ?? null,
+    [activeRun],
+  );
+  const compactWorkbench = viewportWidth < 760;
+  const autoCollapseAuxPanels = viewportWidth < 1180;
+  const effectiveSidebarCollapsed = sidebarCollapsed || autoCollapseAuxPanels;
+  const effectiveInspectorCollapsed = inspectorCollapsed || autoCollapseAuxPanels;
+
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
+
+    setWorkbenchLayout(parseWorkbenchLayout(window.localStorage.getItem(WORKBENCH_LAYOUT_STORAGE_KEY)) ?? DEFAULT_WORKBENCH_LAYOUT);
+    updateViewportWidth();
+    window.addEventListener("resize", updateViewportWidth);
+
+    return () => window.removeEventListener("resize", updateViewportWidth);
+  }, []);
+
+  useEffect(() => {
+    if (!compactWorkbench) {
+      setCompactOverlay(null);
+    }
+  }, [compactWorkbench]);
+
+  useEffect(() => {
+    if (effectiveSidebarCollapsed) {
+      sidebarPanelRef.current?.collapse();
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      sidebarPanelRef.current?.expand();
+      window.requestAnimationFrame(() => sidebarPanelRef.current?.resize("18%"));
+    });
+  }, [effectiveSidebarCollapsed]);
+
+  useEffect(() => {
+    if (effectiveInspectorCollapsed) {
+      inspectorPanelRef.current?.collapse();
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      inspectorPanelRef.current?.expand();
+      window.requestAnimationFrame(() => inspectorPanelRef.current?.resize("26%"));
+    });
+  }, [effectiveInspectorCollapsed]);
+
+  function stageForRun(run: WritingRunRecord): FlowStage {
+    if (run.status === "finalized") {
+      return "finalize";
+    }
+
+    return run.candidates.length > 0 ? "review" : "precheck";
+  }
+
+  function upsertAvailableRun(run: WritingRunRecord) {
+    setAvailableRuns((current) => [
+      run,
+      ...current.filter((item) => item.id !== run.id),
+    ]);
+  }
+
+  function applyRun(run: WritingRunRecord, nextStage: FlowStage = stageForRun(run)) {
+    setActiveRun(run);
+    setSpec(run.jobSpec);
+    setOutputContract(run.outputContract ?? initialOutputContract);
+    setQuickIntake({
+      raw: run.quickIntake ?? "",
+      referencePaste: run.referencePaste ?? run.ruleScope?.referencePaste ?? "",
+    });
+    setRuleScope(run.ruleScope ?? null);
+    setSelectedCandidateId(run.finalizedCandidateId ?? null);
+    setFinalizedCandidateId(run.finalizedCandidateId ?? null);
+    setRunDirty(false);
+    setRuntimeError(null);
+    setStage(nextStage);
+  }
+
+  function canVisitStage(nextStage: FlowStage) {
+    if (runtimeBusy) {
+      return false;
+    }
+    if (nextStage === "intake") {
+      return true;
+    }
+    if (nextStage === "precheck") {
+      return Boolean(activeRun || ruleScope);
+    }
+    if (nextStage === "review" || nextStage === "finalize") {
+      return Boolean(activeRun?.candidates.length);
+    }
+
+    return false;
+  }
+
+  function visitStage(nextStage: FlowStage) {
+    if (!canVisitStage(nextStage)) {
+      return;
+    }
+    if (nextStage === "finalize") {
+      enterFinalize();
+      return;
+    }
+
+    setStage(nextStage);
+    if (activeRun) {
+      window.history.replaceState(null, "", `/?runId=${encodeURIComponent(activeRun.id)}&stage=${nextStage}`);
+    }
+  }
+
+  useEffect(() => {
+    if (hasLoadedLatestRun && (!requestedRunId || activeRun?.id === requestedRunId)) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadLatestRun() {
+      try {
+        const data = await listWritingRuns();
+        const targetRun = requestedRunId
+          ? data.runs.find((run) => run.id === requestedRunId) ?? data.runs[0]
+          : data.runs[0];
+
+        if (cancelled) {
+          return;
+        }
+
+        setAvailableRuns(data.runs);
+        if (targetRun) {
+          applyRun(targetRun, requestedStage ?? stageForRun(targetRun));
+          if (requestedCandidateId) {
+            setSelectedCandidateId(requestedCandidateId);
+            setFinalizedCandidateId((current) => current ?? requestedCandidateId);
+          }
+          setCenterMode("editor");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setRuntimeError(error instanceof Error ? error.message : "读取最近任务失败");
+        }
+      } finally {
+        if (!cancelled) {
+          setHasLoadedLatestRun(true);
+        }
+      }
+    }
+
+    void loadLatestRun();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRun?.id, hasLoadedLatestRun, requestedCandidateId, requestedRunId, requestedStage]);
 
 	function enterFinalize() {
 	  const candidate = selectedDraft ?? displayDrafts[bestDraftIndex] ?? null;
@@ -562,73 +797,32 @@ export default function WritingProductionPage() {
 
 	  setFinalizedCandidateId(candidate.id);
 	  setStage("finalize");
+    if (activeRun) {
+      window.history.replaceState(null, "", `/?runId=${encodeURIComponent(activeRun.id)}&stage=finalize&candidateId=${encodeURIComponent(candidate.id)}`);
+    }
 	}
 
-  const contentBriefChecks = useMemo<BaselineCheck[]>(
-    () => [
-      {
-        title: "任务识别",
-        source: "标题 / 任务",
-        sourceKeys: ["intent"],
-        method: "Creative Brief / Define：先定义本轮沟通任务。",
-        detail: spec.title || "未填写标题。",
-	        impact: "Draft 生成上下文，决定候选文本围绕哪个任务展开。",
-        iteration: "未来可替换为行业化问题定义模板。",
-      },
-      {
-        title: "目标识别",
-        source: "目标",
-        sourceKeys: ["intent"],
-        method: "Creative Brief：明确受众、目的和期望结果。",
-        detail: spec.goal || "未填写目标。",
-	        impact: "任务匹配评分，以及候选文本的结论强度。",
-        iteration: "未来可按业务类型扩展目标拆解规则。",
-      },
-      {
-        title: "素材依据",
-        source: "底稿",
-        sourceKeys: ["evidence"],
-        method: "Grounding：生成必须绑定可追溯素材。",
-        detail: spec.source || "未填写底稿。",
-	        impact: "事实边界、证据缺口和禁止编造范围。",
-        iteration: "未来可接入引用、附件和转录稿结构化抽取。",
-      },
-      {
-        title: "交付契约",
-        source: "Output Contract",
-        sourceKeys: ["output"],
-        method: "Structured Outputs：先固定产物类型、长度、结构和格式，再生成内容。",
-        detail: `${outputContract.artifactType} / ${outputContract.lengthRange} / ${outputContract.structure}`,
-	        impact: "候选文本长度、结构、格式，以及 Eval Profile 的格式契约检查。",
-        iteration: "未来可开放自定义 Output Contract 模板。",
-      },
-    ],
-    [outputContract, spec],
-  );
+  function selectFinalizedCandidate(candidateId: string) {
+    setFinalizedCandidateId(candidateId);
+    setSelectedCandidateId(candidateId);
+  }
 
-  const writingRuleChecks = useMemo<BaselineCheck[]>(
-    () => [
-      {
-        title: "写法参考",
-        source: "写法参考",
-        sourceKeys: ["style"],
-        method: "Few-shot / Skill：只抽取写法模式，不复制句子。",
-        detail: spec.writingReference || "未提供写法参考。",
-	        impact: "候选文本结构、语气、论证节奏和相似表达风险。",
-        iteration: "未来可沉淀为可发布的 Writing Skill。",
-      },
-      {
-        title: "评审偏好约束",
-        source: "评审偏好",
-        sourceKeys: ["review"],
-        method: "Eval-driven Development：先定义偏好，再生成和评分。",
-        detail: spec.reviewPreference || "未提供评审偏好。",
-	        impact: "Eval Profile、人评分校准和下一轮规则调整。",
-        iteration: "未来可按评分历史自动更新 Eval Profile。",
-      },
-    ],
-    [outputContract, spec],
-  );
+  function startNewJobDraft() {
+    window.history.replaceState(null, "", "/");
+    setActiveRun(null);
+    setExpandedRunId(null);
+    setRuleScope(null);
+    setSpec(initialJobSpec);
+    setOutputContract(initialOutputContract);
+    setQuickIntake(initialQuickIntake);
+    setSelectedCandidateId(null);
+    setFinalizedCandidateId(null);
+    setRunDirty(false);
+    setRuntimeError(null);
+    setStage("intake");
+    setCenterMode("editor");
+    setHasLoadedLatestRun(true);
+  }
 
   const scoringChecks = useMemo<BaselineCheck[]>(
     () => [
@@ -638,16 +832,16 @@ export default function WritingProductionPage() {
         sourceKeys: ["intent"],
         method: "Eval-driven Development：把目标转成可比较标准。",
         detail: spec.goal || "目标缺失时无法判断任务是否完成。",
-	        impact: "Auto Eval 和人工评分表，用于判断候选是否跑偏。",
+	        impact: "自动评分和人工评分表，用于判断候选是否跑偏。",
         iteration: "未来可按业务场景调整权重。",
       },
       {
         title: "格式契约匹配",
-        source: "Output Contract",
+        source: "输出契约",
         sourceKeys: ["output"],
         method: "Format Compliance：把长度、结构和格式转成可检查标准。",
         detail: `${outputContract.lengthRange}；${outputContract.formatRules}`,
-	        impact: "Eval Profile 会检查候选是否满足交付物形态，而不只看写得好不好。",
+	        impact: "评分口径会检查候选是否满足交付物形态，而不只看写得好不好。",
         iteration: "未来可按文章、博客、口播稿、TTS handoff 模板调整权重。",
       },
       {
@@ -663,9 +857,9 @@ export default function WritingProductionPage() {
         title: "写法一致性",
         source: "写法参考",
         sourceKeys: ["style"],
-        method: "Few-shot / Skill Eval：评估结构和语气是否匹配。",
+        method: "Few-shot / Reference Method Eval：评估结构和语气是否匹配。",
         detail: spec.writingReference || "没有写法参考时仅使用 baseline 写法。",
-	        impact: "风格偏好分和 Writing Skill Candidate 更新。",
+	        impact: "风格偏好分和写作规则候选更新。",
         iteration: "未来可由多篇样本文自动提炼风格维度。",
       },
       {
@@ -681,263 +875,296 @@ export default function WritingProductionPage() {
     [spec],
   );
 
-  const riskChecks = useMemo<BaselineCheck[]>(
-    () => [
-      {
-        title: "事实缺口",
-        source: "底稿",
-        sourceKeys: ["evidence"],
-        method: "Grounding risk check：识别材料不足导致的幻觉风险。",
-        badge: spec.source.includes("缺少") ? "中" : "低",
-        detail: spec.source.includes("缺少")
-          ? "底稿明确提到缺少信息，需要在生成前保留为风险。"
-          : "底稿已有内容，但仍需按素材生成，不补写未知事实。",
-	        impact: "是否阻断生成、是否要求补充材料，以及风险扣分。",
-        iteration: "未来可接入证据覆盖率阈值。",
-      },
-      {
-        title: "相似表达",
-        source: "写法参考",
-        sourceKeys: ["style"],
-        method: "Style transfer risk：区分结构借鉴和句式复制。",
-        badge: spec.writingReference ? "中" : "低",
-        detail: spec.writingReference
-          ? "写法参考只能抽取结构和偏好，不能复制句式。"
-          : "未提供写法参考，暂不触发仿写相似风险。",
-	        impact: "生成禁区、相似表达扣分和 Skill 发布判断。",
-        iteration: "未来可接入相似度检测和引用边界规则。",
-      },
-      {
-        title: "特殊处理",
-        source: "Output Contract",
-        sourceKeys: ["output"],
-        method: "Contract risk check：识别公式、TTS handoff、下游视觉处理等特殊约束。",
-        badge: outputContract.specialHandling || outputContract.downstreamHandoff ? "中" : "低",
-        detail: outputContract.specialHandling || outputContract.downstreamHandoff || "当前无特殊处理。",
-	        impact: "决定是否需要在本节点标注低置信，或交给下游 TTS / Video 节点处理。",
-        iteration: "未来可按领域节点提供专用 Contract、Skill 和 Eval。",
-      },
-      {
-        title: "偏好不稳定",
-        source: "评审偏好",
-        sourceKeys: ["review"],
-        method: "Preference calibration：识别不稳定偏好，避免过早固化。",
-        badge: spec.reviewPreference.includes("不稳定") ? "中" : "低",
-        detail: spec.reviewPreference.includes("不稳定")
-          ? "评审偏好字段明确提到不稳定，Eval Profile 只能作为临时规则。"
-          : "当前评审偏好未显式标记不稳定。",
-	        impact: "本轮规则是否可发布，以及是否只能保留为 candidate。",
-        iteration: "未来可用多轮人评分稳定性决定是否发布。",
-      },
-    ],
-    [outputContract, spec],
-  );
+  function beginRuntimeTask(task: RuntimeTaskKind) {
+    runtimeAbortRef.current?.abort();
+    const controller = new AbortController();
+    runtimeAbortRef.current = controller;
+    setRuntimeBusy(true);
+    setRuntimeTask(task);
+    setRuntimeError(null);
+    return controller.signal;
+  }
+
+  function switchRuntimeTask(task: RuntimeTaskKind) {
+    setRuntimeTask(task);
+  }
+
+  function finishRuntimeTask(signal?: AbortSignal) {
+    if (!signal || runtimeAbortRef.current?.signal === signal) {
+      runtimeAbortRef.current = null;
+      setRuntimeBusy(false);
+      setRuntimeTask(null);
+    }
+  }
+
+  function stopWaitingForRuntime() {
+    runtimeAbortRef.current?.abort();
+    runtimeAbortRef.current = null;
+    setRuntimeBusy(false);
+    setRuntimeTask(null);
+    setRuntimeError("已停止等待当前模型调用。若服务端已开始处理，它可能仍会完成并写入历史 run；需要时重新运行即可。");
+  }
+
+  function isAbortError(error: unknown) {
+    return error instanceof DOMException && error.name === "AbortError";
+  }
+
+  function updateQuickIntake(field: keyof QuickIntake, value: string) {
+    setQuickIntake((current) => ({ ...current, [field]: value }));
+    setRuleScope(null);
+    setRunDirty(true);
+  }
 
   function updateSpec(field: keyof JobSpec, value: string) {
     setSpec((current) => ({ ...current, [field]: value }));
     setRunDirty(true);
-    setStage("precheck-ready");
+    setStage("precheck");
   }
 
   function updateOutputContract(field: keyof OutputContract, value: string) {
     setOutputContract((current) => ({ ...current, [field]: value }));
     setRunDirty(true);
-    setStage("precheck-ready");
+    setStage("precheck");
   }
 
-	async function createRunForSpec(nextSpec: JobSpec) {
+  async function deriveRuleScopeForIntake(signal?: AbortSignal) {
+    const data = await deriveRuleScope({
+      quickIntake: quickIntake.raw,
+      referencePaste: quickIntake.referencePaste,
+    }, { signal });
+    setRuleScope(data.ruleScope);
+    return data.ruleScope;
+  }
+
+  function removeRuleScopeItem(itemId: string) {
+    setRuleScope((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.filter((item) => item.id !== itemId),
+          }
+        : current,
+    );
+    setRunDirty(true);
+  }
+
+  async function generateRuleScopePreview() {
+    const signal = beginRuntimeTask("scope_extraction");
+    try {
+      await deriveRuleScopeForIntake(signal);
+    } catch (error) {
+      if (!isAbortError(error)) {
+        setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      }
+    } finally {
+      finishRuntimeTask(signal);
+    }
+  }
+
+	async function createRunForSpec(
+    nextSpec: JobSpec,
+    scopeOverride?: WritingRuleScopeRecord | null,
+    signal?: AbortSignal,
+  ) {
+    const confirmedScope = scopeOverride
+        ? {
+          ...scopeOverride,
+          status: "confirmed" as const,
+        }
+      : null;
 	  const payload: CreateWritingRunInput = {
 	    quickIntake: quickIntake.raw,
-	    skill: {
-	      id: selectedSkill.id,
-	      category: selectedSkill.category,
-	      version: selectedSkill.version,
-	      status: selectedSkill.status,
+      referencePaste: quickIntake.referencePaste,
+      ruleScope: confirmedScope,
+	    skillPackage: {
+	      id: selectedSkillPackage.id,
+	      category: selectedSkillPackage.category,
+	      version: selectedSkillPackage.version,
+	      status: selectedSkillPackage.status,
 	    },
 	    outputProfile,
 	    outputContract,
 	    jobSpec: nextSpec,
 	  };
-	  const response = await fetch("/api/writing-runs", {
-	    method: "POST",
-	    headers: { "content-type": "application/json" },
-	    body: JSON.stringify(payload),
-	  });
-
-	  if (!response.ok) {
-	    throw new Error("创建 Writing Run 失败");
-	  }
-
-	  const data = (await response.json()) as { run: WritingRunRecord };
+	  const data = await createWritingRunRecord(payload, { signal });
 	  setActiveRun(data.run);
+    upsertAvailableRun(data.run);
 	  setRunDirty(false);
 	  return data.run;
 	}
 
 	async function confirmPrecheck() {
-	  setRuntimeBusy(true);
-	  setRuntimeError(null);
+	  const signal = beginRuntimeTask(activeRun && !runDirty ? "candidate_generation" : "precheck_normalization");
 	  try {
-	    const sourceRun = activeRun && !runDirty ? activeRun : await createRunForSpec(spec);
-	    const response = await fetch(`/api/writing-runs/${sourceRun.id}/confirm`, {
-	      method: "POST",
-	    });
-
-	    if (!response.ok) {
-	      throw new Error("确认 Precheck 失败");
-	    }
-
-	    const data = (await response.json()) as { run: WritingRunRecord };
+	    const sourceRun = activeRun && !runDirty ? activeRun : await createRunForSpec(spec, ruleScope, signal);
+      switchRuntimeTask("candidate_generation");
+	    const data = await confirmWritingRun(sourceRun.id, { signal });
 	    setActiveRun(data.run);
+      upsertAvailableRun(data.run);
+      setJobView((current) => (current === "all" ? current : jobViewForRun(data.run)));
 	    setRunDirty(false);
-	    setStage("confirmed");
+	    setStage("review");
 	  } catch (error) {
-	    setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      if (!isAbortError(error)) {
+	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      }
 	  } finally {
-	    setRuntimeBusy(false);
+	    finishRuntimeTask(signal);
 	  }
 	}
 
-	async function startJobSpec() {
-	  const rawInput = quickIntake.raw.trim();
-	  const firstLine = rawInput.split("\n").find((line) => line.trim())?.trim() ?? "";
-	  const titleDraft =
-	    firstLine.length > 52 ? `${firstLine.slice(0, 52)}...` : firstLine;
-	  const nextSpec = {
-	    ...spec,
-	    title: titleDraft || spec.title,
-	    goal: rawInput
-	      ? `基于 Quick Intake 原始输入完成一篇${selectedSkillScope}；先明确核心判断，再给出可追溯依据和下一步建议。`
-	      : spec.goal,
-	    source: rawInput ? `Quick Intake 原始输入：${rawInput}` : spec.source,
-	    writingReference: selectedSkill.prefill.writingReference,
-	    reviewPreference: selectedSkill.prefill.reviewPreference,
-	  };
+  async function rerunPrecheck() {
+    const signal = beginRuntimeTask(ruleScope ? "precheck_normalization" : "scope_extraction");
+    try {
+      const activeScope = ruleScope ?? (await deriveRuleScopeForIntake(signal));
+      if (!activeScope.items.length) {
+        setRuntimeError("写作规则范围为空，至少保留 1 条规则范围。");
+        return;
+      }
+      switchRuntimeTask("precheck_normalization");
+      await createRunForSpec(spec, activeScope, signal);
+      setStage("precheck");
+    } catch (error) {
+      if (!isAbortError(error)) {
+        setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      }
+    } finally {
+      finishRuntimeTask(signal);
+    }
+  }
 
-	  setRuntimeBusy(true);
-	  setRuntimeError(null);
-	  setSpec(nextSpec);
-	  setStage("precheck-ready");
+	async function startJobSpec() {
+	  const signal = beginRuntimeTask(ruleScope ? "precheck_normalization" : "scope_extraction");
 	  try {
-	    await createRunForSpec(nextSpec);
+	    const rawInput = quickIntake.raw.trim();
+	    const activeScope = ruleScope ?? (await deriveRuleScopeForIntake(signal));
+	    if (!activeScope.items.length) {
+	      setRuntimeError("写作规则范围为空，至少保留 1 条规则范围。");
+	      return;
+	    }
+      switchRuntimeTask("precheck_normalization");
+
+	    const firstLine = rawInput.split("\n").find((line) => line.trim())?.trim() ?? "";
+	    const titleDraft = firstLine.length > 52 ? `${firstLine.slice(0, 52)}...` : firstLine;
+	    const scopeReference = activeScope.items
+	      .map((item) => `${scopeKindLabel[item.kind]}：${item.text}`)
+	      .join("\n");
+	    const nextSpec = {
+	      ...spec,
+	      title: titleDraft || spec.title,
+	      goal: rawInput
+	        ? `基于快速输入原始内容完成一篇${selectedRuleScope}；先明确核心判断，再给出可追溯依据和下一步建议。`
+	        : spec.goal,
+	      source: [
+	        rawInput ? `快速输入原始内容：${rawInput}` : spec.source,
+	        quickIntake.referencePaste.trim() ? `参考文本：${quickIntake.referencePaste.trim()}` : "",
+	      ]
+	        .filter(Boolean)
+	        .join("\n"),
+	      writingReference:
+	        [selectedSkillPackage.prefill.writingReference, scopeReference].filter(Boolean).join("\n") ||
+	        spec.writingReference,
+	      reviewPreference: selectedSkillPackage.prefill.reviewPreference || spec.reviewPreference,
+	    };
+
+	    setSpec(nextSpec);
+	    setStage("precheck");
+	    await createRunForSpec(nextSpec, activeScope, signal);
 	  } catch (error) {
-	    setRunDirty(true);
-	    setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      if (!isAbortError(error)) {
+	      setRunDirty(true);
+	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      }
 	  } finally {
-	    setRuntimeBusy(false);
+	    finishRuntimeTask(signal);
 	  }
 	}
 
 	async function recordFeedback(feedback: HumanFeedbackInput) {
 	  if (!activeRun) {
-	    setRuntimeError("没有可写入的 Writing Run");
+	    setRuntimeError("没有可写入的任务");
 	    return;
 	  }
 
-	  setRuntimeBusy(true);
-	  setRuntimeError(null);
+	  const signal = beginRuntimeTask("feedback_reasoning");
 	  try {
-	    const response = await fetch(`/api/writing-runs/${activeRun.id}/feedback`, {
-	      method: "POST",
-	      headers: { "content-type": "application/json" },
-	      body: JSON.stringify({
+	    const data = await recordWritingFeedback(activeRun.id, {
 	        ...feedback,
 	        note:
 	          feedback.note ??
 	          (feedback.kind === "selection"
 	            ? "用户通过选中文本提交局部反馈。"
-	            : "用户提交人工反馈，用于校准下一轮 Skill Candidate。"),
-	      }),
-	    });
-
-	    if (!response.ok) {
-	      throw new Error("写入人工反馈失败");
-	    }
-
-	    const data = (await response.json()) as { run: WritingRunRecord };
+	            : "用户提交人工反馈，用于校准下一轮写作规则候选。"),
+	      }, { signal });
 
 	    if (feedback.kind === "selection") {
-	      const patchResponse = await fetch(`/api/writing-runs/${data.run.id}/rule-patches`, {
-	        method: "POST",
-	        headers: { "content-type": "application/json" },
-	        body: JSON.stringify({ candidateId: feedback.candidateId }),
-	      });
-
-	      if (!patchResponse.ok) {
-	        throw new Error("自动生成规则草稿失败");
-	      }
-
-	      const patchData = (await patchResponse.json()) as { run: WritingRunRecord };
+        switchRuntimeTask("rule_patch_compilation");
+	      const patchData = await compileWritingRulePatch(
+          data.run.id,
+          { candidateId: feedback.candidateId },
+          { signal },
+        );
 	      setActiveRun(patchData.run);
+        upsertAvailableRun(patchData.run);
+        setJobView((current) => (current === "all" ? current : jobViewForRun(patchData.run)));
 	      return;
 	    }
 
 	    setActiveRun(data.run);
+      upsertAvailableRun(data.run);
+      setJobView((current) => (current === "all" ? current : jobViewForRun(data.run)));
 	  } catch (error) {
-	    setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      if (!isAbortError(error)) {
+	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      }
 	  } finally {
-	    setRuntimeBusy(false);
+	    finishRuntimeTask(signal);
 	  }
 	}
 
 	async function deleteFeedback(feedbackId: string) {
 	  if (!activeRun) {
-	    setRuntimeError("没有可写入的 Writing Run");
+	    setRuntimeError("没有可写入的任务");
 	    return;
 	  }
 
-	  setRuntimeBusy(true);
-	  setRuntimeError(null);
+	  const signal = beginRuntimeTask("feedback_reasoning");
 	  try {
-	    const response = await fetch(`/api/writing-runs/${activeRun.id}/feedback`, {
-	      method: "DELETE",
-	      headers: { "content-type": "application/json" },
-	      body: JSON.stringify({ feedbackId }),
-	    });
-
-	    if (!response.ok) {
-	      throw new Error("删除人工反馈失败");
-	    }
-
-	    const data = (await response.json()) as { run: WritingRunRecord };
+	    const data = await deleteWritingFeedback(activeRun.id, feedbackId, { signal });
 	    setActiveRun(data.run);
+      upsertAvailableRun(data.run);
 	  } catch (error) {
-	    setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      if (!isAbortError(error)) {
+	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      }
 	  } finally {
-	    setRuntimeBusy(false);
+	    finishRuntimeTask(signal);
 	  }
 	}
 
 	async function runGenerationBatch() {
 	  if (!activeRun) {
-	    setRuntimeError("没有可运行的 Writing Run");
+	    setRuntimeError("没有可运行的任务");
 	    return;
 	  }
 
-	  setRuntimeBusy(true);
-	  setRuntimeError(null);
+	  const signal = beginRuntimeTask("generation_batch");
 	  try {
-	    const response = await fetch(`/api/writing-runs/${activeRun.id}/generation-batch`, {
-	      method: "POST",
-	      headers: { "content-type": "application/json" },
-	      body: JSON.stringify({ candidateCount: 3 }),
-	    });
-
-	    if (!response.ok) {
-	      throw new Error("运行下一批候选失败");
-	    }
-
-	    const data = (await response.json()) as { run: WritingRunRecord };
+	    const data = await runWritingGenerationBatch(activeRun.id, { candidateCount: 3 }, { signal });
 	    setActiveRun(data.run);
-	    setStage("confirmed");
+      upsertAvailableRun(data.run);
+      setJobView((current) => (current === "all" ? current : jobViewForRun(data.run)));
+	    setStage("review");
 	  } catch (error) {
-	    setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      if (!isAbortError(error)) {
+	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      }
 	  } finally {
-	    setRuntimeBusy(false);
+	    finishRuntimeTask(signal);
 	  }
 	}
 
-	function exportFinalizedDoc(candidate: CandidateRecord) {
+	async function exportFinalizedDoc(candidate: CandidateRecord) {
 	  const html = buildCandidateDocHtml({
 	    candidate,
 	    jobSpec: spec,
@@ -953,1086 +1180,1146 @@ export default function WritingProductionPage() {
 	  link.click();
 	  link.remove();
 	  URL.revokeObjectURL(url);
+
+    if (!activeRun) {
+      return;
+    }
+
+    try {
+      const data = await finalizeWritingRunRecord(activeRun.id, { candidateId: candidate.id });
+      setActiveRun(data.run);
+      upsertAvailableRun(data.run);
+      setFinalizedCandidateId(candidate.id);
+      setJobView((current) => (current === "all" ? current : jobViewForRun(data.run)));
+    } catch (error) {
+      setRuntimeError(error instanceof Error ? error.message : "定稿状态写入失败");
+    }
 	}
 
+  const filteredRuns = useMemo(
+    () => availableRuns.filter((run) => jobView === "all" || jobViewForRun(run) === jobView),
+    [availableRuns, jobView],
+  );
+  const viewCounts = useMemo(
+    () => ({
+      all: availableRuns.length,
+      drafts: availableRuns.filter((run) => jobViewForRun(run) === "drafts").length,
+      precheck: availableRuns.filter((run) => jobViewForRun(run) === "precheck").length,
+      reviewing: availableRuns.filter((run) => jobViewForRun(run) === "reviewing").length,
+      feedback: availableRuns.filter((run) => jobViewForRun(run) === "feedback").length,
+      finalized: availableRuns.filter((run) => jobViewForRun(run) === "finalized").length,
+    }),
+    [availableRuns],
+  );
+
+  function changeJobView(view: JobView) {
+    setJobView(view);
+    setExpandedRunId(null);
+    if (compactWorkbench) {
+      setCenterMode("jobs");
+    }
+  }
+
+  function openRun(run: WritingRunRecord = activeRun as WritingRunRecord) {
+    if (!run) {
+      return;
+    }
+    window.history.replaceState(null, "", `/?runId=${encodeURIComponent(run.id)}&stage=${stageForRun(run)}`);
+    applyRun(run);
+    setCenterMode("editor");
+  }
+
+  function toggleRunDetails(run: WritingRunRecord) {
+    if (expandedRunId === run.id) {
+      setExpandedRunId(null);
+      return;
+    }
+
+    applyRun(run);
+    setExpandedRunId(run.id);
+    setCenterMode("editor");
+  }
+
+  function switchEditorStage(nextStage: FlowStage) {
+    setCenterMode("editor");
+    if (activeRun) {
+      setExpandedRunId(activeRun.id);
+    }
+    visitStage(nextStage);
+  }
+
+  function collapseSidebar() {
+    setSidebarCollapsed(true);
+  }
+
+  function expandSidebar() {
+    setSidebarCollapsed(false);
+  }
+
+  function collapseInspector() {
+    setInspectorCollapsed(true);
+  }
+
+  function expandInspector() {
+    setInspectorCollapsed(false);
+  }
+
+  function persistWorkbenchLayout(layout: Record<string, number>) {
+    setWorkbenchLayout(layout);
+
+    if (compactWorkbench || autoCollapseAuxPanels || effectiveSidebarCollapsed || effectiveInspectorCollapsed) {
+      return;
+    }
+
+    window.localStorage.setItem(WORKBENCH_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+  }
+
+  function renderEditor() {
+    return (
+      <LinearEditor
+        stage={stage}
+        activeRun={activeRun}
+        ruleScope={ruleScope}
+        selectedSkillPackage={selectedSkillPackage}
+        isBaselinePackage={isBaselinePackage}
+        selectedRuleScope={selectedRuleScope}
+        quickIntake={quickIntake}
+        spec={spec}
+        outputContract={outputContract}
+        activeSource={activeSource}
+        runtimeBusy={runtimeBusy}
+        runtimeTask={runtimeTask}
+        precheckTrace={precheckTrace}
+        scoringChecks={scoringChecks}
+        displayDrafts={displayDrafts}
+        selectedDraft={selectedDraft}
+        selectedDraftIndex={selectedDraftIndex}
+        bestDraftIndex={bestDraftIndex}
+        finalizedDraft={finalizedDraft}
+        onUpdateQuickIntake={updateQuickIntake}
+        onUpdateSpec={updateSpec}
+        onUpdateOutputContract={updateOutputContract}
+        onSetActiveSource={setActiveSource}
+        onClearActiveSource={() => setActiveSource(null)}
+        onRemoveRuleScopeItem={removeRuleScopeItem}
+        onGenerateRuleScope={generateRuleScopePreview}
+        onStartJobSpec={startJobSpec}
+        onRerunPrecheck={rerunPrecheck}
+        onConfirmPrecheck={confirmPrecheck}
+        canVisitStage={canVisitStage}
+        onVisitStage={visitStage}
+        onSelectCandidate={setSelectedCandidateId}
+        onSelectFinalCandidate={selectFinalizedCandidate}
+        onRecordFeedback={activeRun ? recordFeedback : undefined}
+        onRunGenerationBatch={runGenerationBatch}
+        onEnterFinalize={enterFinalize}
+        onBackToReview={() => setStage("review")}
+        onExportDoc={exportFinalizedDoc}
+      />
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-zinc-100 text-zinc-950 dark:bg-zinc-100 dark:text-zinc-950">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-6 py-8">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="muted" className="font-mono">
-                L1
-              </Badge>
-              <Badge variant="outline">Text Node Console</Badge>
-              <Badge variant="secondary">{stageCopy[stage].badge}</Badge>
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold tracking-normal">
-                doc-maker · Text Generation Node
-              </h1>
-              <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                当前节点只负责主文本生成：输入、检查、候选、反馈和下一批。TTS / Video 是下游节点，通过 Text Artifact + Handoff Contract 消费结果。
-              </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5 lg:w-[650px]">
-            <Metric label="Job" value={activeRun ? activeRun.status : "draft"} icon={CircleDot} />
-            <Metric label="检查" value={stageCopy[stage].precheckMetric} icon={BookOpenCheck} />
-            <Metric label="Artifact" value="text" icon={FileText} />
-            <Metric label="Candidates" value={stageCopy[stage].draftsMetric} icon={FileText} />
-            <Metric label="Writing Skill" value="v0.3" icon={Sparkles} />
-          </div>
-        </header>
+    <main className="h-screen overflow-hidden bg-[#f6f5f1] text-zinc-950">
+      <ResizablePanelGroup
+        direction="horizontal"
+        defaultLayout={workbenchLayout}
+        onLayoutChanged={persistWorkbenchLayout}
+        className="h-full min-h-0 overflow-hidden"
+      >
+        <ResizablePanel
+          id="jobs-sidebar"
+          panelRef={sidebarPanelRef}
+          defaultSize="24%"
+          minSize={effectiveSidebarCollapsed ? "56px" : "220px"}
+          maxSize={effectiveSidebarCollapsed ? "56px" : "340px"}
+          collapsedSize="56px"
+          collapsible
+          className="min-h-0"
+        >
+          {effectiveSidebarCollapsed ? (
+            <LinearSidebarRail
+              jobView={jobView}
+              counts={viewCounts}
+              onChangeView={changeJobView}
+              onNewJob={startNewJobDraft}
+            />
+          ) : (
+            <LinearSidebar
+              jobView={jobView}
+              counts={viewCounts}
+              onChangeView={changeJobView}
+              onNewJob={startNewJobDraft}
+            />
+          )}
+        </ResizablePanel>
 
-        <section className="grid gap-3 rounded-lg border bg-white p-4 text-sm md:grid-cols-3">
-          <InfoRow
-            label="当前领域"
-            value="Doc / Text：生成主文本、文本 Eval、Writing Skill。"
+        {effectiveSidebarCollapsed ? null : <ResizableHandle withHandle />}
+
+        <ResizablePanel
+          id="workbench-center"
+          defaultSize="50%"
+          minSize={compactWorkbench ? "0px" : "520px"}
+          className="min-h-0 min-w-0"
+        >
+        <section className="flex h-full min-h-0 min-w-0 flex-col border-x bg-white">
+          <LinearTopBar
+            centerMode={centerMode}
+            jobView={jobView}
+            stageBadge={stageCopy[stage].badge}
+            activeRun={activeRun}
+            runtimeBusy={runtimeBusy}
+            sidebarCollapsed={effectiveSidebarCollapsed}
+            inspectorCollapsed={effectiveInspectorCollapsed}
+            showSidebarToggle={!compactWorkbench && !autoCollapseAuxPanels}
+            sidebarToggleDisabled={autoCollapseAuxPanels}
+            inspectorToggleDisabled={false}
+            onToggleSidebar={sidebarCollapsed ? expandSidebar : collapseSidebar}
+            onToggleInspector={
+              compactWorkbench || autoCollapseAuxPanels
+                ? () => setCompactOverlay("inspector")
+                : inspectorCollapsed
+                  ? expandInspector
+                  : collapseInspector
+            }
+            onOpenSettingsHref="/settings/llm"
           />
-          <InfoRow
-            label="共用节点骨架"
-            value="输入 -> 检查 -> 候选 -> 反馈 -> 规则草稿 -> 下一批。"
-          />
-          <InfoRow
-            label="下游边界"
-            value="TTS / Video 拥有自己的 Contract、Skill、Eval 和节点控制台。"
-          />
+
+          {runtimeTask ? (
+            <div className="border-b px-4 py-3">
+              <RuntimeStatusPanel task={runtimeTask} onStopWaiting={stopWaitingForRuntime} />
+            </div>
+          ) : null}
+
+          {runtimeError ? (
+            <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950">
+              {runtimeError}
+            </div>
+          ) : null}
+
+          <div className="min-h-0 flex-1">
+            {compactWorkbench && centerMode === "jobs" ? (
+              <LinearJobList
+                runs={filteredRuns}
+                activeRunId={activeRun?.id ?? null}
+                view={jobView}
+                onOpenRun={openRun}
+              />
+            ) : compactWorkbench ? (
+              renderEditor()
+            ) : centerMode === "editor" && !activeRun ? (
+              renderEditor()
+            ) : (
+              <LinearJobList
+                runs={filteredRuns}
+                activeRunId={activeRun?.id ?? null}
+                expandedRunId={expandedRunId}
+                view={jobView}
+                onOpenRun={openRun}
+                onToggleRun={toggleRunDetails}
+                renderExpandedRun={(run) =>
+                  activeRun?.id === run.id ? (
+                    renderEditor()
+                  ) : (
+                    <div className="rounded-lg border bg-white p-4 text-sm text-muted-foreground">
+                      正在加载任务详情。
+                    </div>
+                  )
+                }
+              />
+            )}
+          </div>
         </section>
+        </ResizablePanel>
 
-        <section className="sticky top-3 z-20 rounded-lg border border-zinc-300 bg-zinc-800 p-5 text-zinc-100 shadow-sm">
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge className="border-zinc-600 bg-zinc-700 text-zinc-100">
-                节点状态
-              </Badge>
-              <span className="text-xs text-zinc-400">{stageCopy[stage].description}</span>
+        {!compactWorkbench && !effectiveInspectorCollapsed ? <ResizableHandle withHandle /> : null}
+
+        {!compactWorkbench ? (
+          <ResizablePanel
+            id="job-inspector"
+            panelRef={inspectorPanelRef}
+            defaultSize="26%"
+            minSize={effectiveInspectorCollapsed ? "56px" : "300px"}
+            maxSize={effectiveInspectorCollapsed ? "56px" : "520px"}
+            collapsedSize="56px"
+            collapsible
+            className="min-h-0"
+          >
+            {effectiveInspectorCollapsed ? (
+              <LinearInspectorRail onExpand={expandInspector} />
+            ) : (
+              <LinearInspector
+                activeRun={activeRun}
+                selectedDraft={selectedDraft}
+                latestGenerationRunId={latestGenerationRun?.id}
+                stage={stage}
+                centerMode={centerMode}
+                runtimeBusy={runtimeBusy}
+                onOpenRun={() => activeRun && openRun(activeRun)}
+                onStageChange={switchEditorStage}
+                onRunGenerationBatch={runGenerationBatch}
+                onDeleteFeedback={deleteFeedback}
+              />
+            )}
+          </ResizablePanel>
+        ) : null}
+      </ResizablePanelGroup>
+
+      <Sheet
+        open={Boolean(compactOverlay)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCompactOverlay(null);
+          }
+        }}
+      >
+        <SheetContent
+          side="right"
+          className="w-[min(520px,100vw)] max-w-none overflow-hidden bg-[#fbfaf6] p-0 sm:max-w-none"
+        >
+          <SheetHeader className="border-b px-4 py-3 pr-12 text-left">
+            <SheetTitle className="text-sm">上下文面板</SheetTitle>
+            <SheetDescription className="truncate text-xs">
+              {activeRun ? `${activeRun.jobSpec.title} · ${activeRun.id}` : "当前任务的摘要、下一步和 Trace。"}
+            </SheetDescription>
+          </SheetHeader>
+          <LinearInspector
+            activeRun={activeRun}
+            selectedDraft={selectedDraft}
+            latestGenerationRunId={latestGenerationRun?.id}
+            stage={stage}
+            centerMode={centerMode}
+            runtimeBusy={runtimeBusy}
+            onOpenRun={() => {
+              if (activeRun) {
+                openRun(activeRun);
+              }
+              setCompactOverlay(null);
+            }}
+            onStageChange={(nextStage) => {
+              switchEditorStage(nextStage);
+              setCompactOverlay(null);
+            }}
+            onRunGenerationBatch={runGenerationBatch}
+            onDeleteFeedback={deleteFeedback}
+          />
+        </SheetContent>
+      </Sheet>
+    </main>
+  );
+
+}
+
+function RuleScopePreview({
+  ruleScope,
+  onRemoveItem,
+}: {
+  ruleScope: WritingRuleScopeRecord | null;
+  onRemoveItem: (itemId: string) => void;
+}) {
+  if (!ruleScope) {
+    return (
+      <section className="rounded-lg border border-dashed bg-zinc-50 p-4 text-sm text-muted-foreground">
+        写作规则范围尚未生成。它是进入输入契约前的临时规则范围，只包含结构、语气、禁忌和检查点。
+      </section>
+    );
+  }
+
+  const visibleItems = ruleScope.items.slice(0, 3);
+  const hiddenItems = ruleScope.items.slice(3);
+
+  return (
+    <section className="space-y-3 rounded-lg border bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">写作规则范围</div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            轻量规则范围，默认只展示关键 3 条；提炼评分：{ruleScope.eval.score} / 100；来源 {ruleScope.source}。
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full border bg-zinc-50 px-2 py-1 font-mono [overflow-wrap:anywhere]">
+              {ruleScope.llmTrace.provider} / {ruleScope.llmTrace.model}
+            </span>
+            <span className="rounded-full border bg-zinc-50 px-2 py-1 font-mono [overflow-wrap:anywhere]">
+              {ruleScope.llmTrace.promptVersion}
+            </span>
+            <span className="rounded-full border bg-zinc-50 px-2 py-1 font-mono [overflow-wrap:anywhere]">
+              trace {ruleScope.llmTrace.id}
+            </span>
+            {typeof ruleScope.llmTrace.latencyMs === "number" ? (
+              <span className="rounded-full border bg-zinc-50 px-2 py-1 font-mono">
+                {ruleScope.llmTrace.latencyMs}ms
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <Badge variant="outline">{ruleScope.status}</Badge>
+      </div>
+      <WarningCallout>{ruleScope.warning}</WarningCallout>
+      <div className="grid gap-2">
+        {visibleItems.map((item) => (
+          <div key={item.id} className="rounded-lg border bg-zinc-50 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">{scopeKindLabel[item.kind]}</Badge>
+                  <Badge variant="outline">{confidenceLabel[item.confidence]}</Badge>
+                </div>
+                <p className="mt-2 text-sm text-zinc-900">{item.text}</p>
+                <details className="mt-1 text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">来源说明</summary>
+                  <p className="mt-1">{item.sourceNote}</p>
+                </details>
+              </div>
+              <Button
+                aria-label="删除 scope 项"
+                size="icon"
+                variant="ghost"
+                onClick={() => onRemoveItem(item.id)}
+              >
+                <X className="size-4" />
+              </Button>
             </div>
+          </div>
+        ))}
+      </div>
+      {hiddenItems.length ? (
+        <details className="rounded-lg border border-dashed bg-zinc-50 p-3 text-sm">
+          <summary className="cursor-pointer font-medium text-muted-foreground">
+            其余 {hiddenItems.length} 条已折叠
+          </summary>
+          <div className="mt-3 grid gap-2">
+            {hiddenItems.map((item) => (
+              <div key={item.id} className="flex items-start justify-between gap-3 rounded-md border bg-white p-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">{scopeKindLabel[item.kind]}</Badge>
+                    <Badge variant="outline">{confidenceLabel[item.confidence]}</Badge>
+                  </div>
+                  <p className="mt-1 text-sm text-zinc-900">{item.text}</p>
+                </div>
+                <Button
+                  aria-label="删除 scope 项"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => onRemoveItem(item.id)}
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+      <div className="grid gap-2 md:grid-cols-3">
+        {ruleScope.eval.checks.map((check) => (
+          <div key={check.label} className="rounded-lg border bg-zinc-50 p-3 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">{check.label}</span>
+              <Badge variant={check.status === "pass" ? "secondary" : "outline"}>{check.status}</Badge>
+            </div>
+            <p className="mt-2 text-muted-foreground">{check.guidance}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RuntimeStatusPanel({
+  task,
+  onStopWaiting,
+}: {
+  task: RuntimeTaskKind;
+  onStopWaiting: () => void;
+}) {
+  const copy = runtimeTaskCopy[task];
+
+  return (
+    <section className="rounded-lg border-2 border-zinc-900 bg-white p-4 text-sm shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary" className="gap-1">
+              <Loader2 className="size-3 animate-spin" />
+              running
+            </Badge>
+            <Badge variant="outline" className="font-mono">
+              {copy.node}
+            </Badge>
+          </div>
+          <div className="mt-2 font-semibold">{copy.title}</div>
+          <p className="mt-1 text-muted-foreground">{copy.body}</p>
+          <p className="mt-1 text-xs text-amber-700">{copy.estimate}</p>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={onStopWaiting}>
+          停止等待
+        </Button>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100">
+        <div className="h-full w-1/3 animate-pulse rounded-full bg-zinc-900" />
+      </div>
+    </section>
+  );
+}
+
+const editorStageSteps: Array<{ id: FlowStage; label: string; hint: string }> = [
+  { id: "intake", label: "输入", hint: "开始" },
+  { id: "precheck", label: "检查", hint: "契约" },
+  { id: "review", label: "评审", hint: "候选" },
+  { id: "finalize", label: "定稿", hint: "导出" },
+];
+
+function StagePath({
+  stage,
+  canVisitStage,
+  onVisitStage,
+}: {
+  stage: FlowStage;
+  canVisitStage: (stage: FlowStage) => boolean;
+  onVisitStage: (stage: FlowStage) => void;
+}) {
+  return (
+    <nav className="rounded-lg border bg-white px-3 py-2" aria-label="文本生产流程">
+      <div className="flex flex-wrap items-center gap-2">
+        {editorStageSteps.map((step, index) => {
+          const active = step.id === stage;
+          const enabled = canVisitStage(step.id);
+
+          return (
+            <div key={step.id} className="flex items-center gap-2">
+              {index > 0 ? <span className="text-xs text-muted-foreground">/</span> : null}
+              <button
+                type="button"
+                disabled={!enabled}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-left text-xs transition disabled:cursor-not-allowed disabled:opacity-40",
+                  active
+                    ? "bg-zinc-950 text-white"
+                    : "text-muted-foreground hover:bg-zinc-100 hover:text-zinc-950",
+                )}
+                onClick={() => onVisitStage(step.id)}
+              >
+                <span className="font-medium">{step.label}</span>
+                <span className="ml-1 opacity-75">{step.hint}</span>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+function LinearEditor({
+  stage,
+  activeRun,
+  ruleScope,
+  selectedSkillPackage,
+  isBaselinePackage,
+  selectedRuleScope,
+  quickIntake,
+  spec,
+  outputContract,
+  activeSource,
+  runtimeBusy,
+  runtimeTask,
+  precheckTrace,
+  scoringChecks,
+  displayDrafts,
+  selectedDraft,
+  selectedDraftIndex,
+  bestDraftIndex,
+  finalizedDraft,
+  onUpdateQuickIntake,
+  onUpdateSpec,
+  onUpdateOutputContract,
+  onSetActiveSource,
+  onClearActiveSource,
+  onRemoveRuleScopeItem,
+  onGenerateRuleScope,
+  onStartJobSpec,
+  onRerunPrecheck,
+  onConfirmPrecheck,
+  canVisitStage,
+  onVisitStage,
+  onSelectCandidate,
+  onSelectFinalCandidate,
+  onRecordFeedback,
+  onRunGenerationBatch,
+  onEnterFinalize,
+  onBackToReview,
+  onExportDoc,
+}: {
+  stage: FlowStage;
+  activeRun: WritingRunRecord | null;
+  ruleScope: WritingRuleScopeRecord | null;
+  selectedSkillPackage: (typeof skillPackageOptions)[number];
+  isBaselinePackage: boolean;
+  selectedRuleScope: string;
+  quickIntake: QuickIntake;
+  spec: JobSpec;
+  outputContract: OutputContract;
+  activeSource: SourceKey | null;
+  runtimeBusy: boolean;
+  runtimeTask: RuntimeTaskKind | null;
+  precheckTrace: LLMCallTraceRecord | null;
+  scoringChecks: BaselineCheck[];
+  displayDrafts: CandidateRecord[];
+  selectedDraft: CandidateRecord | null;
+  selectedDraftIndex: number;
+  bestDraftIndex: number;
+  finalizedDraft: CandidateRecord | null;
+  onUpdateQuickIntake: (field: keyof QuickIntake, value: string) => void;
+  onUpdateSpec: (field: keyof JobSpec, value: string) => void;
+  onUpdateOutputContract: (field: keyof OutputContract, value: string) => void;
+  onSetActiveSource: (source: SourceKey) => void;
+  onClearActiveSource: () => void;
+  onRemoveRuleScopeItem: (itemId: string) => void;
+  onGenerateRuleScope: () => void;
+  onStartJobSpec: () => void;
+  onRerunPrecheck: () => void;
+  onConfirmPrecheck: () => void;
+  canVisitStage: (stage: FlowStage) => boolean;
+  onVisitStage: (stage: FlowStage) => void;
+  onSelectCandidate: (candidateId: string) => void;
+  onSelectFinalCandidate: (candidateId: string) => void;
+  onRecordFeedback?: (feedback: HumanFeedbackInput) => Promise<void> | void;
+  onRunGenerationBatch: () => Promise<void> | void;
+  onEnterFinalize: () => void;
+  onBackToReview: () => void;
+  onExportDoc: (candidate: CandidateRecord) => Promise<void> | void;
+}) {
+  const [precheckTab, setPrecheckTab] = useState("precheck");
+
+  if (stage === "intake") {
+    return (
+      <EditorStageShell stage={stage} canVisitStage={canVisitStage} onVisitStage={onVisitStage}>
+        <section className="flex min-h-[720px] flex-col rounded-lg border bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-3xl font-semibold tracking-normal">
-                {stageCopy[stage].nextTitle}
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm text-zinc-300">
-                {stageCopy[stage].nextHint}
+              <h2 className="text-base font-semibold">新建任务草稿</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                单入口输入一句想法或粘贴材料，先生成轻量写作规则范围。
               </p>
             </div>
-		            <div className="grid gap-2 text-xs sm:grid-cols-7">
-		              <FlowStep active={stage === "context"} done={stage !== "context"} label="Start Context" />
-		              <FlowStep active={false} done={stage !== "context"} label="输入区" />
-		              <FlowStep active={false} done={stage !== "context"} label="Output Contract" />
-		              <FlowStep active={stage === "precheck-ready"} done={stage === "confirmed" || stage === "finalize"} label="检查区" />
-		              <FlowStep active={stage === "precheck-ready"} done={stage === "confirmed" || stage === "finalize"} label="Eval Profile" />
-		              <FlowStep active={stage === "confirmed"} done={stage === "finalize"} label="候选区" />
-		              <FlowStep active={stage === "finalize"} done={false} label="定稿导出" />
-		            </div>
-	          </div>
-	        </section>
-
-	        {runtimeError ? (
-	          <section className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-950">
-	            {runtimeError}
-	          </section>
-	        ) : null}
-
-	        {activeRun ? (
-	          <section className="grid gap-3 rounded-lg border bg-white p-4 text-sm md:grid-cols-4">
-	            <InfoRow label="Run ID" value={activeRun.id} />
-	            <InfoRow label="Run Store" value={activeRun.storePath} />
-	            <InfoRow label="Trace" value={`${activeRun.trace.length} events`} />
-	            <InfoRow label="Eval Run" value={activeRun.evalRun?.id ?? "waiting"} />
-	          </section>
-	        ) : null}
-
-	        {stage === "context" ? (
-	          <section className="grid gap-6 lg:grid-cols-[0.82fr_1.18fr]">
-	            <Card className="rounded-lg border-2 border-zinc-900 bg-white text-zinc-950 shadow-md">
-	              <CardHeader>
-	                <div className="flex items-start justify-between gap-3">
-	                  <div>
-	                    <CardTitle className="flex items-center gap-2 text-base">
-	                      <StepMark active value="Start" />
-	                      Skill Scope
-	                    </CardTitle>
-	                    <CardDescription>
-	                      默认不选择历史 Skill；只有明确复用某类写法时才选择。
-	                    </CardDescription>
-	                  </div>
-	                  <Badge variant="outline">pre-step</Badge>
-	                </div>
-	              </CardHeader>
-	              <CardContent className="space-y-4">
-	                <WarningCallout>
-	                  Baseline mode 只使用本次输入生成临时 Writing Skill Candidate。历史 Skill 是可选模板，不是新 Job 的默认前提。
-	                </WarningCallout>
-	                <div className="grid gap-3">
-	                  {skillOptions.map((skill) => (
-	                    <button
-	                      key={skill.id}
-	                      type="button"
-	                      onClick={() => setSelectedSkillId(skill.id)}
-	                      className={cn(
-	                        "rounded-lg border p-4 text-left transition-all",
-	                        selectedSkillId === skill.id
-	                          ? "border-zinc-900 bg-white shadow-md ring-2 ring-zinc-900/10"
-	                          : "border-zinc-200 bg-zinc-50 hover:border-zinc-400",
-	                        skill.status === "frozen" && "opacity-60",
-	                      )}
-	                    >
-	                      <div className="flex flex-wrap items-center justify-between gap-2">
-	                        <div className="font-semibold">{skill.category}</div>
-	                        <Badge variant={selectedSkillId === skill.id ? "secondary" : "outline"}>
-	                          {skill.status}
-	                        </Badge>
-	                      </div>
-	                      <div className="mt-1 text-sm font-medium text-zinc-800">
-	                        {skill.version}
-	                      </div>
-	                      <p className="mt-2 text-sm text-muted-foreground">
-	                        {skill.description}
-	                      </p>
-	                    </button>
-	                  ))}
-	                </div>
-	              </CardContent>
-	            </Card>
-
-	            <div className="space-y-6">
-	              <Card className="rounded-lg border-2 border-zinc-900 bg-white text-zinc-950 shadow-md">
-	                <CardHeader>
-	                  <div className="flex items-start justify-between gap-3">
-	                    <div>
-	                      <CardTitle className="flex items-center gap-2 text-base">
-	                        <Sparkles className="size-4" />
-	                        Quick Intake
-	                      </CardTitle>
-	                      <CardDescription>
-	                        只保留一个入口，系统生成可编辑的 Job Spec 草稿。
-	                      </CardDescription>
-	                    </div>
-	                    <Badge variant="secondary">draft first</Badge>
-	                  </div>
-	                </CardHeader>
-	                <CardContent className="space-y-4">
-	                  <WarningCallout>
-	                    Quick Intake 只生成草稿，不是最终契约；进入输入区后仍需要人工补全和确认。
-	                  </WarningCallout>
-	                  <label className="space-y-2">
-	                    <span className="text-sm font-medium">Quick Intake 单入口</span>
-	                    <Textarea
-	                      value={quickIntake.raw}
-	                      onChange={(event) =>
-	                        setQuickIntake({
-	                          raw: event.target.value,
-	                        })
-	                      }
-	                      placeholder="把一句想法、会议记录、视频转文字、参考片段或底稿粘贴在这里。第一行会作为标题草稿。"
-	                      className="min-h-56 resize-y"
-	                    />
-	                  </label>
-	                  <div className="rounded-lg border border-dashed bg-zinc-50 p-3 text-sm text-muted-foreground">
-	                    文档上传不作为独立入口展示；当前原型请先复制文档文本到这里，后续真实版本再把上传解析并回填到同一输入框。
-	                  </div>
-	                  <div className="flex flex-col gap-3 rounded-lg border bg-zinc-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-	                    <p className="text-sm text-muted-foreground">
-	                      {isBaselineSkill
-	                        ? "生成草稿只使用本次输入和 baseline stack，不套用历史 Skill。"
-	                        : `生成草稿会带入 ${selectedSkill.category} 的写法参考、评审偏好和 baseline stack。`}
-	                    </p>
-	                    <Button onClick={startJobSpec} disabled={runtimeBusy}>
-	                      {runtimeBusy ? "写入 run store..." : "生成 Job Spec 草稿"}
-	                      <ArrowRight className="size-4" />
-	                    </Button>
-	                  </div>
-	                </CardContent>
-	              </Card>
-
-	            <Card className="rounded-lg bg-white text-zinc-950 shadow-sm">
-	              <CardHeader>
-	                <div className="flex items-start justify-between gap-3">
-	                  <div>
-	                    <CardTitle className="flex items-center gap-2 text-base">
-	                      <Sparkles className="size-4" />
-	                      Auto-filled Baseline Stack
-	                    </CardTitle>
-	                    <CardDescription>
-	                      {isBaselineSkill
-	                        ? "当前使用 baseline 初始化依赖；历史 Skill 暂不参与本次任务。"
-	                        : `选择 ${selectedSkill.version} 后，系统初始化下面这些依赖。`}
-	                    </CardDescription>
-	                  </div>
-	                  <Badge variant="outline">
-	                    {isBaselineSkill ? "No Skill selected" : selectedSkill.category}
-	                  </Badge>
-	                </div>
-	              </CardHeader>
-	              <CardContent className="space-y-4">
-	                <section className="rounded-lg border bg-zinc-50 p-3 text-sm">
-	                  <div className="font-medium">依赖链路</div>
-	                  <p className="mt-1 text-muted-foreground">
-		                    {isBaselineSkill
-		                      ? "Baseline stack -> Job Spec -> Precheck Candidate -> Eval Profile -> Candidate Versions"
-		                      : "Skill -> baseline stack -> Job Spec -> Precheck Candidate -> Eval Profile -> Candidate Versions"}
-	                  </p>
-	                </section>
-	                <div className="grid gap-2 md:grid-cols-2">
-	                  {autoFilledStack.map(([label, value]) => (
-	                    <InfoRow key={label} label={label} value={value} />
-	                  ))}
-	                </div>
-	                <div className="rounded-lg border border-dashed bg-zinc-50 p-4">
-	                  <p className="text-sm text-muted-foreground">
-	                    {isBaselineSkill
-	                      ? "这里是系统 baseline 自动加载的规则依赖。用户不需要先选择风格类型，本轮 Precheck 会生成临时 Writing Skill Candidate。"
-	                      : "这里是 Skill 选择后自动加载的规则依赖。用户不需要逐项填写，但需要理解这些 baseline 会影响 Job Spec 草稿、Precheck、Eval Profile 和候选评分。"}
-	                  </p>
-	                </div>
-	              </CardContent>
-	            </Card>
-	            </div>
-	          </section>
-	        ) : null}
-
-	        {stage === "precheck-ready" ? (
-	          <section className="grid gap-6 xl:grid-cols-[minmax(340px,0.95fr)_minmax(320px,0.86fr)_minmax(280px,0.72fr)] xl:items-start">
-            <Card
-              id="job-spec"
-              className={cn(
-                "rounded-lg bg-white text-zinc-950 shadow-sm",
-                "border-zinc-200",
-              )}
-            >
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <StepMark active={false} value="输入" />
-                        输入区
-                      </CardTitle>
-                      <JobSpecHelpDialog />
-                    </div>
-	                    <CardDescription>
-	                      人工填写原始任务；后续交给自动拆解流程处理。
-	                    </CardDescription>
-                  </div>
-                  <Badge variant="outline">
-                    editable
-                  </Badge>
-                </div>
-	              </CardHeader>
-	              <CardContent className="space-y-4">
-	                <section className="rounded-lg border bg-zinc-50 p-3">
-                  <div className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                    Job Spec 输入关系
-                  </div>
-                  <div className="grid gap-2 text-xs sm:grid-cols-5 xl:grid-cols-1 2xl:grid-cols-5">
-                    <InputRelationStep
-                      index="1"
-                      title="问题定义"
-                      body="要解决什么沟通任务"
-                      sourceKey="intent"
-                      activeSource={activeSource}
-                      onActivate={setActiveSource}
-                      onClear={() => setActiveSource(null)}
-                    />
-                    <InputRelationStep
-                      index="2"
-                      title="事实"
-                      body="基于哪些素材"
-                      sourceKey="evidence"
-                      activeSource={activeSource}
-                      onActivate={setActiveSource}
-                      onClear={() => setActiveSource(null)}
-                    />
-                    <InputRelationStep
-                      index="3"
-                      title="交付契约"
-                      body="多长、什么结构、什么格式"
-                      sourceKey="output"
-                      activeSource={activeSource}
-                      onActivate={setActiveSource}
-                      onClear={() => setActiveSource(null)}
-                    />
-                    <InputRelationStep
-                      index="4"
-                      title="写法"
-                      body="参考怎样写"
-                      sourceKey="style"
-                      activeSource={activeSource}
-                      onActivate={setActiveSource}
-                      onClear={() => setActiveSource(null)}
-                    />
-                    <InputRelationStep
-                      index="5"
-                      title="评审"
-                      body="按什么偏好判断"
-                      sourceKey="review"
-                      activeSource={activeSource}
-                      onActivate={setActiveSource}
-                      onClear={() => setActiveSource(null)}
-                    />
-                  </div>
-	                  <p className="mt-3 text-xs text-muted-foreground">
-	                    填写是并行的；字段会进入固定 schema，不直接变成最终规则。
-	                  </p>
-	                </section>
-	                <WarningCallout>
-	                  LLM 自动拆解存在不确定性和黑盒误判；输入区只提交原始材料，不直接产生可执行规则。
-	                </WarningCallout>
-
-                <Field
-                  label="1. 标题 / 任务（问题定义）"
-                  sourceKey="intent"
-                  activeSource={activeSource}
-                  onActivate={setActiveSource}
-                  onClear={() => setActiveSource(null)}
-                >
-	                  <Input
-	                    value={spec.title}
-	                    onChange={(event) => updateSpec("title", event.target.value)}
-	                    onClick={() => setActiveSource("intent")}
-	                    onFocus={() => setActiveSource("intent")}
-	                    onBlur={() => setActiveSource(null)}
-	                  />
-                </Field>
-                <Field
-                  label="1. 目标（问题定义）"
-                  sourceKey="intent"
-                  activeSource={activeSource}
-                  onActivate={setActiveSource}
-                  onClear={() => setActiveSource(null)}
-                >
-	                  <Textarea
-	                    value={spec.goal}
-	                    onChange={(event) => updateSpec("goal", event.target.value)}
-	                    onClick={() => setActiveSource("intent")}
-	                    onFocus={() => setActiveSource("intent")}
-	                    onBlur={() => setActiveSource(null)}
-	                    className="min-h-24"
-	                  />
-                </Field>
-                <Field
-                  label="2. 底稿 / 原始素材（事实）"
-                  sourceKey="evidence"
-                  activeSource={activeSource}
-                  onActivate={setActiveSource}
-                  onClear={() => setActiveSource(null)}
-                >
-	                  <Textarea
-	                    value={spec.source}
-	                    onChange={(event) => updateSpec("source", event.target.value)}
-	                    onClick={() => setActiveSource("evidence")}
-	                    onFocus={() => setActiveSource("evidence")}
-	                    onBlur={() => setActiveSource(null)}
-	                    className="min-h-24"
-	                  />
-                </Field>
-                <section
-                  className={cn(
-                    "space-y-3 rounded-lg border bg-muted/30 p-3 transition",
-                    activeSource === "output" && "border-zinc-500 bg-white shadow-sm",
-                  )}
-                  onMouseEnter={() => setActiveSource("output")}
-                  onMouseLeave={() => setActiveSource(null)}
-                  onFocus={() => setActiveSource("output")}
-                  onBlur={() => setActiveSource(null)}
-                  tabIndex={0}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-medium">3. Output Contract（交付物契约）</div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        固定本节点要交付什么文本：类型、长度、结构、格式和下游 handoff。
-                      </p>
-                    </div>
-                    <Badge variant="outline">baseline</Badge>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <Field
-                      label="产物类型"
-                      sourceKey="output"
-                      activeSource={activeSource}
-                      onActivate={setActiveSource}
-                      onClear={() => setActiveSource(null)}
-                    >
-                      <Input
-                        value={outputContract.artifactType}
-                        onChange={(event) => updateOutputContract("artifactType", event.target.value)}
-                        onClick={() => setActiveSource("output")}
-                        onFocus={() => setActiveSource("output")}
-                        onBlur={() => setActiveSource(null)}
-                      />
-                    </Field>
-                    <Field
-                      label="长度范围"
-                      sourceKey="output"
-                      activeSource={activeSource}
-                      onActivate={setActiveSource}
-                      onClear={() => setActiveSource(null)}
-                    >
-                      <Input
-                        value={outputContract.lengthRange}
-                        onChange={(event) => updateOutputContract("lengthRange", event.target.value)}
-                        onClick={() => setActiveSource("output")}
-                        onFocus={() => setActiveSource("output")}
-                        onBlur={() => setActiveSource(null)}
-                      />
-                    </Field>
-                  </div>
-                  <Field
-                    label="结构要求"
-                    sourceKey="output"
-                    activeSource={activeSource}
-                    onActivate={setActiveSource}
-                    onClear={() => setActiveSource(null)}
-                  >
-                    <Textarea
-                      value={outputContract.structure}
-                      onChange={(event) => updateOutputContract("structure", event.target.value)}
-                      onClick={() => setActiveSource("output")}
-                      onFocus={() => setActiveSource("output")}
-                      onBlur={() => setActiveSource(null)}
-                    />
-                  </Field>
-                  <Field
-                    label="格式规则"
-                    sourceKey="output"
-                    activeSource={activeSource}
-                    onActivate={setActiveSource}
-                    onClear={() => setActiveSource(null)}
-                  >
-                    <Textarea
-                      value={outputContract.formatRules}
-                      onChange={(event) => updateOutputContract("formatRules", event.target.value)}
-                      onClick={() => setActiveSource("output")}
-                      onFocus={() => setActiveSource("output")}
-                      onBlur={() => setActiveSource(null)}
-                    />
-                  </Field>
-                  <Field
-                    label="依据规则"
-                    sourceKey="output"
-                    activeSource={activeSource}
-                    onActivate={setActiveSource}
-                    onClear={() => setActiveSource(null)}
-                  >
-                    <Textarea
-                      value={outputContract.groundingRules}
-                      onChange={(event) => updateOutputContract("groundingRules", event.target.value)}
-                      onClick={() => setActiveSource("output")}
-                      onFocus={() => setActiveSource("output")}
-                      onBlur={() => setActiveSource(null)}
-                    />
-                  </Field>
-                  <Field
-                    label="特殊处理"
-                    sourceKey="output"
-                    activeSource={activeSource}
-                    onActivate={setActiveSource}
-                    onClear={() => setActiveSource(null)}
-                  >
-                    <Textarea
-                      value={outputContract.specialHandling}
-                      onChange={(event) => updateOutputContract("specialHandling", event.target.value)}
-                      onClick={() => setActiveSource("output")}
-                      onFocus={() => setActiveSource("output")}
-                      onBlur={() => setActiveSource(null)}
-                    />
-                  </Field>
-                  <Field
-                    label="下游 Handoff"
-                    sourceKey="output"
-                    activeSource={activeSource}
-                    onActivate={setActiveSource}
-                    onClear={() => setActiveSource(null)}
-                  >
-                    <Textarea
-                      value={outputContract.downstreamHandoff}
-                      onChange={(event) => updateOutputContract("downstreamHandoff", event.target.value)}
-                      onClick={() => setActiveSource("output")}
-                      onFocus={() => setActiveSource("output")}
-                      onBlur={() => setActiveSource(null)}
-                    />
-                  </Field>
-                </section>
-                <Field
-                  label="4. 写法参考 / 外部 writing skill（写法）"
-                  sourceKey="style"
-                  activeSource={activeSource}
-                  onActivate={setActiveSource}
-                  onClear={() => setActiveSource(null)}
-                >
-	                  <Textarea
-	                    value={spec.writingReference}
-	                    onChange={(event) => updateSpec("writingReference", event.target.value)}
-	                    onClick={() => setActiveSource("style")}
-	                    onFocus={() => setActiveSource("style")}
-	                    onBlur={() => setActiveSource(null)}
-	                    className="min-h-24"
-	                  />
-                </Field>
-                <Field
-                  label="5. 评审偏好（评审）"
-                  sourceKey="review"
-                  activeSource={activeSource}
-                  onActivate={setActiveSource}
-                  onClear={() => setActiveSource(null)}
-                >
-	                  <Textarea
-	                    value={spec.reviewPreference}
-	                    onChange={(event) => updateSpec("reviewPreference", event.target.value)}
-	                    onClick={() => setActiveSource("review")}
-	                    onFocus={() => setActiveSource("review")}
-	                    onBlur={() => setActiveSource(null)}
-	                    className="min-h-24"
-	                  />
-                </Field>
-                <div className="rounded-lg border border-dashed bg-zinc-50 p-4 text-sm text-muted-foreground">
-                  输入区没有提交按钮。修改任一内容后，右侧检查区会自动按当前输入刷新。
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card
-              id="precheck"
-              className={cn(
-                "rounded-lg bg-white text-zinc-950 shadow-sm",
-                stage === "precheck-ready" ? "border-2 border-zinc-500" : "border-zinc-200",
-              )}
-            >
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-	                  <div>
-	                    <CardTitle className="flex items-center gap-2 text-base">
-	                      <StepMark active={stage === "precheck-ready"} value="检查" />
-	                      检查区
-	                      <PrecheckHelpDialog />
-	                    </CardTitle>
-	                    <CardDescription>
-	                      自动拆解产出待确认的 Precheck Candidate。
-	                    </CardDescription>
-	                  </div>
-	                  <div className="flex flex-col items-end gap-2">
-	                    <Badge variant={stage === "precheck-ready" ? "secondary" : "outline"}>
-	                      auto loaded
-	                    </Badge>
-	                    <Badge variant="outline" className="bg-white">
-	                      traceable only
-	                    </Badge>
-	                  </div>
-	                </div>
-		              </CardHeader>
-	              <CardContent className="space-y-5">
-	                <WarningCallout>
-	                  LLM 会按 baseline schema 拆解输入，但结果可能漏项、误读或过度推断；确认前不能进入生成。
-	                </WarningCallout>
-	                <section className="space-y-3">
-		                  <SectionTitle icon={FileText} title="Content Brief 来源检查" />
-		                  <div className="grid gap-3">
-                    {contentBriefChecks.map((item) => (
-                      <TraceCard
-                        key={item.title}
-                        title={item.title}
-	                        source={item.source}
-	                        sourceKeys={item.sourceKeys}
-	                        activeSource={activeSource}
-	                        detail={item.detail}
-	                        impact={item.impact}
-	                        iteration={item.iteration}
-                      />
-                    ))}
-                  </div>
-                </section>
-
-	                <Separator />
-
-	                <section className="space-y-3">
-	                  <SectionTitle icon={Sparkles} title="写法规则来源检查" />
-                  <div className="grid gap-3">
-                    {writingRuleChecks.map((item) => (
-                      <TraceCard
-                        key={item.title}
-                        title={item.title}
-	                        source={item.source}
-	                        sourceKeys={item.sourceKeys}
-	                        activeSource={activeSource}
-	                        detail={item.detail}
-	                        impact={item.impact}
-	                        iteration={item.iteration}
-                      />
-                    ))}
-                  </div>
-                </section>
-
-	                <section className="space-y-3">
-	                  <SectionTitle icon={ShieldAlert} title="风险检查" />
-                  <div className="grid gap-3">
-                    {riskChecks.map((risk) => (
-                      <TraceCard
-                        key={risk.title}
-                        title={risk.title}
-	                        source={risk.source}
-	                        sourceKeys={risk.sourceKeys}
-	                        activeSource={activeSource}
-	                        detail={risk.detail}
-	                        impact={risk.impact}
-	                        iteration={risk.iteration}
-                        badge={risk.badge}
-                      />
-                    ))}
-                  </div>
-                </section>
-
-                <div className="flex flex-col gap-3 rounded-lg border border-dashed bg-zinc-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-muted-foreground">
-	                    确认 Precheck Candidate 后，系统才会批量生成候选文本。
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setStage("precheck-ready")}>
-                      重新检查
-                    </Button>
-                    <Button size="sm" onClick={confirmPrecheck} disabled={runtimeBusy}>
-                      {runtimeBusy ? "生成中..." : "确认检查结果并生成候选"}
-                      <ArrowRight className="size-4" />
-                    </Button>
-                  </div>
-	                </div>
-	              </CardContent>
-	            </Card>
-
-	            <Card
-	              id="eval-profile"
-	              className="rounded-lg border-2 border-zinc-900 bg-white text-zinc-950 shadow-md xl:sticky xl:top-36"
-	            >
-	              <CardHeader>
-	                <div className="flex items-start justify-between gap-3">
-	                  <div>
-	                    <CardTitle className="flex items-center gap-2 text-base">
-	                      <StepMark active value="评估" />
-	                      Eval Profile
-	                    </CardTitle>
-	                    <CardDescription>
-	                      由 Precheck Candidate 派生初始评分契约。
-	                    </CardDescription>
-	                  </div>
-	                  <Badge variant="outline" className="bg-zinc-50">
-	                    独立产物
-	                  </Badge>
-	                </div>
-	              </CardHeader>
-	              <CardContent className="space-y-4">
-	                <WarningCallout>
-	                  Eval Profile 不直接读取输入区混乱材料；它由 Precheck Candidate 派生，并显式读取 Output Contract。LLM 生成的评分契约可能带偏置或漏项，需要人工确认。
-	                </WarningCallout>
-	                <section className="rounded-lg border bg-zinc-50 p-3 text-sm">
-	                  <div className="font-medium">直接输入</div>
-	                  <p className="mt-1 text-muted-foreground">
-	                    Precheck Candidate + Output Contract：任务匹配、格式契约、素材忠实度、写法一致性、风险检查。
-	                  </p>
-	                </section>
-	                <div className="grid gap-3">
-	                  {scoringChecks.map((item) => (
-	                    <TraceCard
-	                      key={item.title}
-	                      title={item.title}
-	                      source={item.source}
-	                      sourceKeys={item.sourceKeys}
-	                      activeSource={activeSource}
-	                      detail={item.detail}
-	                      impact={item.impact}
-	                      iteration={item.iteration}
-	                    />
-	                  ))}
-	                </div>
-	              </CardContent>
-	            </Card>
-	          </section>
-        ) : null}
-
-        {stage === "confirmed" ? (
-          <div className="space-y-6">
-            <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <Card
-                id="drafts"
-                className="rounded-lg border-2 border-zinc-950 bg-white text-zinc-950 shadow-sm"
-              >
-              <CardHeader>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <StepMark active={stage === "confirmed"} value="评审" />
-                      Candidate Review
-                    </CardTitle>
-                    <CardDescription>
-                      只负责阅读候选、打反馈、自动生成规则草稿和运行下一批；不做最终导出。
-                    </CardDescription>
-                  </div>
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Badge variant="secondary">规则反馈</Badge>
-                    <Badge variant="outline">
-                      {latestGenerationRun ? `第 ${latestGenerationRun.round} 批` : "ready"}
-                    </Badge>
-                    <Button size="sm" onClick={enterFinalize} disabled={!selectedDraft}>
-                      进入定稿
-                      <ArrowRight className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {activeRun ? (
-                  <section className="grid gap-3 rounded-lg border bg-zinc-50 p-3 text-sm md:grid-cols-3">
-                    <InfoRow
-                      label="当前规则快照"
-                      value={latestGenerationRun?.ruleSnapshotId ?? "rules-v1"}
-                    />
-                    <InfoRow label="本屏候选" value={`${displayDrafts.length} 个最新版本`} />
-                    <InfoRow
-                      label="历史保留"
-                      value={`${activeRun.candidates.length} 个候选 / ${activeRun.generationRuns.length} 批`}
-                    />
-                  </section>
-                ) : null}
-
-                {selectedDraft ? (
-                  <CandidateWorkspace
-                    drafts={displayDrafts}
-                    selectedDraft={selectedDraft}
-                    selectedIndex={selectedDraftIndex}
-                    bestDraftIndex={bestDraftIndex}
-	                    feedback={activeRun?.feedback ?? []}
-	                    onSelectCandidate={setSelectedCandidateId}
-	                    onFeedback={activeRun ? recordFeedback : undefined}
-	                    disabled={runtimeBusy}
-	                  />
-                ) : null}
-
-                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  人工反馈只进入反馈账本和规则草稿；不会改写旧候选，也不会直接覆盖 Published Skill。
-                </div>
-
-                {activeRun ? <ReadOnlyRunDetails run={activeRun} /> : null}
-              </CardContent>
-              </Card>
-
-              <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-                {activeRun ? (
-                  <>
-                    <CandidateWorkflowPanel
-                      run={activeRun}
-                      latestGenerationRunId={latestGenerationRun?.id}
-                      runtimeBusy={runtimeBusy}
-                      onRunGenerationBatch={runGenerationBatch}
-                    />
-                    <DecisionQueuePanel
-                      run={activeRun}
-                      disabled={runtimeBusy}
-                      onDeleteFeedback={deleteFeedback}
-                    />
-                  </>
-                ) : null}
-              </aside>
-            </section>
-
+            <Badge variant="outline">{isBaselinePackage ? "基线" : selectedSkillPackage.category}</Badge>
           </div>
-        ) : null}
+          <div className="mt-4 flex flex-1 flex-col gap-3">
+            <Textarea
+              value={quickIntake.raw}
+              onChange={(event) => onUpdateQuickIntake("raw", event.target.value)}
+              className="min-h-32"
+              placeholder="一句话想法、会议记录、视频转写、参考片段或底稿。"
+            />
+            <Textarea
+              value={quickIntake.referencePaste}
+              onChange={(event) => onUpdateQuickIntake("referencePaste", event.target.value)}
+              className="min-h-24"
+              placeholder="可选：粘贴参考文本。没有参考文本时只生成基线规则范围。"
+            />
+            <RuleScopePreview ruleScope={ruleScope} onRemoveItem={onRemoveRuleScopeItem} />
+            <div className="mt-auto flex items-center justify-end gap-2 border-t pt-3">
+              <Button variant="outline" onClick={onGenerateRuleScope} disabled={runtimeBusy}>
+                {runtimeTask === "scope_extraction" ? "规则提炼中..." : "生成规则范围"}
+              </Button>
+              <Button onClick={onStartJobSpec} disabled={runtimeBusy || (ruleScope?.items.length ?? 0) === 0}>
+                确认规则范围并进入检查
+                <ArrowRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+        </section>
+      </EditorStageShell>
+    );
+  }
 
-        {stage === "finalize" && activeRun && finalizedDraft ? (
+  if (stage === "precheck") {
+    return (
+      <EditorStageShell stage={stage} canVisitStage={canVisitStage} onVisitStage={onVisitStage}>
+        <section className="grid min-h-[720px] gap-4 rounded-lg border bg-white p-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+          <div className="flex min-w-0 flex-col gap-4">
+            <div>
+              <h2 className="text-base font-semibold">输入契约</h2>
+              <p className="mt-1 text-sm text-muted-foreground">修改输入后需要重新运行生成前检查。</p>
+            </div>
+            <Field label="标题 / 任务" sourceKey="intent" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
+              <Input value={spec.title} onChange={(event) => onUpdateSpec("title", event.target.value)} />
+            </Field>
+            <Field label="目标" sourceKey="intent" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
+              <Textarea value={spec.goal} onChange={(event) => onUpdateSpec("goal", event.target.value)} className="min-h-20" />
+            </Field>
+            <Field label="底稿 / 原始素材" sourceKey="evidence" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
+              <Textarea value={spec.source} onChange={(event) => onUpdateSpec("source", event.target.value)} className="min-h-28" />
+            </Field>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="产物类型" sourceKey="output" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
+                <Input value={outputContract.artifactType} onChange={(event) => onUpdateOutputContract("artifactType", event.target.value)} />
+              </Field>
+              <Field label="长度范围" sourceKey="output" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
+                <Input value={outputContract.lengthRange} onChange={(event) => onUpdateOutputContract("lengthRange", event.target.value)} />
+              </Field>
+            </div>
+            <Field label="写法参考" sourceKey="style" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
+              <Textarea value={spec.writingReference} onChange={(event) => onUpdateSpec("writingReference", event.target.value)} className="min-h-24" />
+            </Field>
+            <Field label="评审偏好" sourceKey="review" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
+              <Textarea value={spec.reviewPreference} onChange={(event) => onUpdateSpec("reviewPreference", event.target.value)} className="min-h-24" />
+            </Field>
+          </div>
+
+          <aside className="flex min-w-0 flex-col">
+            <Tabs value={precheckTab} onValueChange={setPrecheckTab} className="min-h-0 flex flex-1 flex-col overflow-hidden rounded-lg border bg-white">
+              <div className="border-b px-4 py-3">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="precheck">生成前检查</TabsTrigger>
+                  <TabsTrigger value="eval">评分口径</TabsTrigger>
+                </TabsList>
+              </div>
+
+              <TabsContent value="precheck" className="m-0 min-h-0 flex-1 overflow-hidden">
+                <ScrollArea className="h-full">
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-base font-semibold">生成前检查</h2>
+                        <p className="mt-1 text-sm text-muted-foreground">检查结果是候选生成前的契约。</p>
+                      </div>
+                      <Badge variant="outline">{precheckTrace ? `${precheckTrace.provider}` : "waiting"}</Badge>
+                    </div>
+                    <WarningCallout>
+                      {activeRun?.precheckRun.warning ?? "LLM 会按基线结构拆解输入；确认前不能进入生成。"}
+                    </WarningCallout>
+                    {activeRun ? (
+                      <div className="mt-3 flex flex-col gap-3">
+                        <InfoRow label="内容摘要" value={activeRun.precheckRun.contentBrief} />
+                        <InfoRow label="依据边界" value={activeRun.precheckRun.groundingBrief} />
+                        <details className="rounded-lg border bg-zinc-50 p-3 text-sm">
+                          <summary className="cursor-pointer font-medium">规则与风险</summary>
+                          <div className="mt-3 flex flex-col gap-2">
+                            {activeRun.precheckRun.writingRulesCandidate.slice(0, 5).map((rule, index) => (
+                              <div key={`${rule}-${index}`} className="rounded-md border bg-white p-2">{rule}</div>
+                            ))}
+                          </div>
+                        </details>
+                      </div>
+                    ) : null}
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="eval" className="m-0 min-h-0 flex-1 overflow-hidden">
+                <ScrollArea className="h-full">
+                  <div className="p-4">
+                    <h3 className="text-sm font-semibold">评分口径</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      这里展示生成前的评分口径，不和检查内容混在一起。
+                    </p>
+                    <div className="mt-3 flex flex-col gap-2">
+                      {scoringChecks.slice(0, 4).map((item) => (
+                        <InfoRow key={item.title} label={item.title} value={item.impact} />
+                      ))}
+                    </div>
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
+            <div className="mt-3 flex justify-end gap-2 rounded-lg border bg-white p-3">
+              <Button variant="outline" size="sm" onClick={onRerunPrecheck} disabled={runtimeBusy}>
+                重新运行
+              </Button>
+              <Button size="sm" onClick={onConfirmPrecheck} disabled={runtimeBusy}>
+                生成候选
+                <ArrowRight className="size-4" />
+              </Button>
+            </div>
+          </aside>
+        </section>
+      </EditorStageShell>
+    );
+  }
+
+  if (stage === "review") {
+    return (
+      <EditorStageShell stage={stage} canVisitStage={canVisitStage} onVisitStage={onVisitStage}>
+        <section className="min-h-[720px] rounded-lg border bg-white p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold">候选评审</h2>
+              <p className="mt-1 text-sm text-muted-foreground">卡片只导航，正文在阅读器中固定高度滚动。</p>
+            </div>
+            <Button size="sm" disabled={!selectedDraft} onClick={onEnterFinalize}>
+              进入定稿
+              <ArrowRight className="size-4" />
+            </Button>
+          </div>
+          {activeRun ? (
+            <ReviewNextActionBar
+              run={activeRun}
+              runtimeBusy={runtimeBusy}
+              onRunGenerationBatch={onRunGenerationBatch}
+            />
+          ) : null}
+          {selectedDraft ? (
+            <CandidateWorkspace
+              drafts={displayDrafts}
+              selectedDraft={selectedDraft}
+              selectedIndex={selectedDraftIndex}
+              bestDraftIndex={bestDraftIndex}
+              feedback={activeRun?.feedback ?? []}
+              onSelectCandidate={onSelectCandidate}
+              onFeedback={onRecordFeedback}
+              disabled={runtimeBusy}
+            />
+          ) : (
+            <div className="rounded-lg border border-dashed bg-zinc-50 p-6 text-sm text-muted-foreground">
+              当前任务还没有候选正文。
+            </div>
+          )}
+        </section>
+      </EditorStageShell>
+    );
+  }
+
+  if (stage === "finalize" && activeRun && finalizedDraft) {
+    return (
+      <EditorStageShell stage={stage} canVisitStage={canVisitStage} onVisitStage={onVisitStage}>
+        <section className="min-h-[720px] rounded-lg border bg-white p-4">
           <FinalizeExportPanel
             drafts={displayDrafts}
             selectedCandidateId={finalizedDraft.id}
-            onSelectCandidate={setFinalizedCandidateId}
-            onBack={() => setStage("confirmed")}
-            onExportDoc={exportFinalizedDoc}
+            onSelectCandidate={onSelectFinalCandidate}
+            onBack={onBackToReview}
+            onExportDoc={onExportDoc}
           />
-        ) : null}
-      </div>
-    </main>
+        </section>
+      </EditorStageShell>
+    );
+  }
+
+  return (
+    <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+      当前没有可编辑内容。
+    </div>
   );
 }
 
-function JobSpecHelpDialog() {
+function EditorStageShell({
+  stage,
+  canVisitStage,
+  onVisitStage,
+  children,
+}: {
+  stage: FlowStage;
+  canVisitStage: (stage: FlowStage) => boolean;
+  onVisitStage: (stage: FlowStage) => void;
+  children: ReactNode;
+}) {
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-md text-muted-foreground hover:text-zinc-950"
-          aria-label="查看 Job Spec 初始化说明"
-        >
-          <CircleHelp className="size-4" />
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Baseline Job Spec 初始化说明</DialogTitle>
-          <DialogDescription>
-            当前提供系统内置 baseline，先把写作任务环境初始化清楚；自定义字段、规则类型或风格类型暂不在 UI 暴露。
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <section className="rounded-lg border bg-zinc-50 p-4 text-zinc-950">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <div className="text-sm font-semibold">当前能力边界</div>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  系统提供一套内置写作任务环境：问题定义、底稿、交付形态、写法参考和评审偏好。用户现在可以编辑本轮内容和 Precheck 产物，但不能新增字段、规则类型或风格类型。
-                </p>
-              </div>
-              <Badge className="border-zinc-300 bg-white text-zinc-700">
-                baseline only
-              </Badge>
-            </div>
-          </section>
+    <ScrollArea className="min-h-0 flex-1">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-5">
+        <StagePath stage={stage} canVisitStage={canVisitStage} onVisitStage={onVisitStage} />
+        {children}
+      </div>
+    </ScrollArea>
+  );
+}
 
-          <section>
-            <div className="mb-2 text-sm font-medium">方法论引用</div>
-            <div className="grid gap-2 text-xs md:grid-cols-2">
-              {methodologyReferences.map((reference) => (
-                <a
-                  key={reference.name}
-                  href={reference.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-md border bg-zinc-50 p-3 text-muted-foreground transition hover:border-zinc-950 hover:bg-white hover:text-zinc-950"
-                >
-                  <span className="font-medium text-zinc-950">{reference.name}</span>
-                  <span className="mt-1 block leading-5">{reference.role}</span>
-                </a>
-              ))}
-            </div>
-          </section>
+function LinearInspector({
+  activeRun,
+  selectedDraft,
+  latestGenerationRunId,
+  stage,
+  centerMode,
+  runtimeBusy,
+  onOpenRun,
+  onStageChange,
+  onRunGenerationBatch,
+  onDeleteFeedback,
+}: {
+  activeRun: WritingRunRecord | null;
+  selectedDraft: CandidateRecord | null;
+  latestGenerationRunId?: string;
+  stage: FlowStage;
+  centerMode: CenterMode;
+  runtimeBusy: boolean;
+  onOpenRun: () => void;
+  onStageChange: (stage: FlowStage) => void;
+  onRunGenerationBatch: () => void;
+  onDeleteFeedback: (feedbackId: string) => void;
+}) {
+  const [inspectorTab, setInspectorTab] = useState("summary");
+  const diagnosticsHref = activeRun ? frameworkDiagnosticsHref(activeRun, stage, selectedDraft) : "/framework";
+  const traceCount = activeRun?.llmTraces?.length ?? 0;
+  const langfuseTraceCount = activeRun?.llmTraces?.filter((trace) => trace.langfuseTraceId).length ?? 0;
+  const fullPayloadCount =
+    activeRun?.llmTraces?.filter((trace) => trace.inputPayload !== undefined && trace.outputPayload !== undefined).length ?? 0;
+  const recentTraces = (activeRun?.llmTraces ?? []).slice().reverse().slice(0, 5);
 
-          <p className="text-sm text-muted-foreground">
-            后续可演进为用户自定义配置；当前版本的设计目标是先把 baseline 规则说清楚、跑通、可评估。新增结构能力需要修改代码。
-          </p>
+  return (
+	    <aside className="flex h-full min-h-0 flex-col bg-[#fbfaf6]">
+	      <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
+	        <div className="min-w-0">
+	          <div className="text-sm font-semibold">上下文面板</div>
+	          <div className="mt-1 truncate text-xs text-muted-foreground">
+	            {activeRun ? activeRun.id : "未选择任务"}
+	          </div>
+	        </div>
+          <Button asChild variant="outline" size="sm" className="h-8 shrink-0">
+            <Link href={diagnosticsHref}>观测</Link>
+          </Button>
+	      </div>
+      {!activeRun ? (
+        <div className="p-4">
+          <div className="rounded-lg border border-dashed bg-white p-4 text-sm text-muted-foreground">
+            从列表选择一个任务，或新建任务。
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      ) : centerMode === "jobs" ? (
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col gap-4 p-4">
+            <section className="rounded-lg border bg-white p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="line-clamp-2 text-sm font-semibold">{activeRun.jobSpec.title}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{runStateLabel(activeRun)}</div>
+                </div>
+                <Badge variant="outline">{activeRun.candidates.length} 个候选</Badge>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                列表视图只负责选择任务；点击后工作区在当前页面打开，列表上下文不会丢失。
+              </p>
+              <Button className="mt-3 w-full" size="sm" onClick={onOpenRun}>
+                打开工作区
+              </Button>
+            </section>
+          </div>
+        </ScrollArea>
+      ) : (
+        <Tabs value={inspectorTab} onValueChange={setInspectorTab} className="flex min-h-0 flex-1 flex-col">
+          <div className="border-b px-3 py-2">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="summary">摘要</TabsTrigger>
+              <TabsTrigger value="next">下一步</TabsTrigger>
+              <TabsTrigger value="trace">Trace</TabsTrigger>
+            </TabsList>
+          </div>
+
+          <TabsContent value="summary" className="m-0 min-h-0 flex-1">
+            <ScrollArea className="h-full">
+              <div className="flex flex-col gap-4 p-4">
+                <section className="rounded-lg border bg-white p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="line-clamp-2 text-sm font-semibold">{activeRun.jobSpec.title}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{runStateLabel(activeRun)}</div>
+                    </div>
+                    <Badge variant="outline">{activeRun.candidates.length} 个候选</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    <Button variant="outline" size="sm" onClick={() => onStageChange("precheck")}>
+                      检查
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!activeRun.candidates.length}
+                      onClick={() => onStageChange("review")}
+                    >
+                      评审
+                    </Button>
+                  </div>
+                </section>
+
+                {selectedDraft ? (
+                  <section className="rounded-lg border bg-white p-3">
+                    <div className="text-xs font-medium text-muted-foreground">已选候选</div>
+                    <div className="mt-2 line-clamp-2 text-sm font-semibold">{selectedDraft.title}</div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{selectedDraft.version}</span>
+                      <span>{selectedDraft.total}</span>
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="next" className="m-0 min-h-0 flex-1">
+            <ScrollArea className="h-full">
+              <div className="flex flex-col gap-4 p-4">
+                {stage === "review" ? (
+                  <DecisionQueuePanel
+                    run={activeRun}
+                    latestGenerationRunId={latestGenerationRunId}
+                    runtimeBusy={runtimeBusy}
+                    disabled={runtimeBusy}
+                    onRunGenerationBatch={onRunGenerationBatch}
+                    onDeleteFeedback={onDeleteFeedback}
+                  />
+                ) : (
+                  <section className="rounded-lg border bg-white p-3">
+                    <div className="text-sm font-semibold">当前下一步</div>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      {stage === "intake"
+                        ? "先生成写作规则范围，再进入生成前检查。"
+                        : stage === "precheck"
+                          ? "确认检查结果后生成候选。"
+                          : "选择定稿候选并导出本次产物。"}
+                    </p>
+                    <div className="mt-3 grid gap-2">
+                      <Button variant="outline" size="sm" onClick={() => onStageChange("precheck")}>
+                        打开检查
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!activeRun.candidates.length}
+                        onClick={() => onStageChange("review")}
+                      >
+                        打开评审
+                      </Button>
+                    </div>
+                  </section>
+                )}
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="trace" className="m-0 min-h-0 flex-1">
+            <ScrollArea className="h-full">
+              <div className="flex flex-col gap-4 p-4">
+                <details className="rounded-lg border bg-white p-3" open>
+                  <summary className="cursor-pointer list-none">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold">Trace 状态</div>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          点击展开查看最近模型调用；完整输入输出在详情页。
+                        </p>
+                      </div>
+                      <Badge variant={traceCount > 0 ? "secondary" : "outline"}>{traceCount}</Badge>
+                    </div>
+                  </summary>
+                  <div className="mt-3 grid gap-2 text-xs">
+                    <div className="flex items-center justify-between rounded-md border bg-zinc-50 px-2 py-1.5">
+                      <span>本地 trace</span>
+                      <Badge variant="secondary">{traceCount} 条</Badge>
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border bg-zinc-50 px-2 py-1.5">
+                      <span>完整 payload</span>
+                      <Badge variant="secondary">{fullPayloadCount} 条</Badge>
+                    </div>
+                    <div className="flex items-center justify-between rounded-md border bg-zinc-50 px-2 py-1.5">
+                      <span>Langfuse 同步</span>
+                      <Badge variant={langfuseTraceCount === traceCount && traceCount > 0 ? "secondary" : "outline"}>
+                        {langfuseTraceCount}/{traceCount}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {recentTraces.map((trace) => (
+                      <Link
+                        key={trace.id}
+                        href={frameworkDiagnosticsHref(activeRun, stage, selectedDraft, trace)}
+                        className="block rounded-md border bg-zinc-50 px-2 py-2 text-xs transition hover:border-zinc-500 hover:bg-white"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate font-medium">{trace.nodeType}</span>
+                          <Badge variant={trace.status === "complete" ? "secondary" : "destructive"}>
+                            {trace.status === "complete" ? "完成" : "失败"}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 truncate text-muted-foreground">
+                          {trace.provider} / {trace.model}
+                        </div>
+                      </Link>
+                    ))}
+                    {!recentTraces.length ? (
+                      <div className="rounded-md border border-dashed bg-zinc-50 p-2 text-xs text-muted-foreground">
+                        当前任务还没有模型调用。
+                      </div>
+                    ) : null}
+                  </div>
+                </details>
+              </div>
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
+      )}
+    </aside>
   );
 }
 
-function PrecheckHelpDialog() {
+function frameworkDiagnosticsHref(
+  run: WritingRunRecord,
+  stage: FlowStage,
+  selectedDraft: CandidateRecord | null,
+  trace?: LLMCallTraceRecord,
+) {
+  const params = new URLSearchParams({ runId: run.id });
+  const returnParams = new URLSearchParams({ runId: run.id, stage });
+  if (selectedDraft) {
+    returnParams.set("candidateId", selectedDraft.id);
+  }
+  params.set("returnTo", `/?${returnParams.toString()}`);
+  if (trace) {
+    params.set("traceId", trace.id);
+  }
+  const nodes = run.frameworkRuns ?? [];
+  let node: FrameworkNodeRunRecord | null = null;
+
+  if (trace?.nodeRunId) {
+    node = nodes.find((item) => item.id === trace.nodeRunId) ?? null;
+  } else if (trace?.nodeType) {
+    node = nodes.slice().reverse().find((item) => item.nodeType === trace.nodeType) ?? null;
+  } else if (stage === "precheck") {
+    node = nodes.slice().reverse().find((item) => item.nodeType === "precheck_normalization") ?? null;
+  } else if (selectedDraft) {
+    const generationRun = (run.generationRuns ?? []).find((item) =>
+      item.candidateIds.includes(selectedDraft.id),
+    );
+    node =
+      nodes
+        .slice()
+        .reverse()
+        .find(
+          (item) =>
+            item.nodeType === "candidate_generation" &&
+            (item.artifacts.some((artifact) => artifact.id === `candidate_artifacts_${run.id}_r${generationRun?.round}`) ||
+              item.artifacts.some((artifact) => artifact.summary.includes(`第 ${generationRun?.round} 批`))),
+        ) ?? null;
+
+    params.set("candidateId", selectedDraft.id);
+  } else {
+    node = nodes.at(-1) ?? null;
+  }
+
+  if (node) {
+    params.set("nodeRunId", node.id);
+  }
+
+  return `/framework?${params.toString()}`;
+}
+
+function LinearInspectorRail({
+  canExpand = true,
+  onExpand,
+}: {
+  canExpand?: boolean;
+  onExpand: () => void;
+}) {
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-md text-muted-foreground hover:text-zinc-950"
-          aria-label="查看 Precheck 设计说明"
-        >
-          <CircleHelp className="size-4" />
+    <aside className="flex h-full min-h-0 flex-col items-center gap-3 bg-[#fbfaf6] px-2 py-3">
+      {canExpand ? (
+        <Button variant="ghost" size="icon" aria-label="展开上下文面板" onClick={onExpand}>
+          <ChevronLeft className="size-4" />
         </Button>
-      </DialogTrigger>
-	      <DialogContent className="max-h-[82vh] max-w-3xl overflow-hidden p-0">
-	        <div className="border-b px-6 py-5">
-		        <DialogHeader>
-		          <DialogTitle>Baseline Precheck 设计说明</DialogTitle>
-		          <DialogDescription>
-		            LLM 按 baseline schema 把左侧动态输入拆成可生成、可评分、可迭代的本轮候选契约。
-		          </DialogDescription>
-		        </DialogHeader>
-	        </div>
-		        <div className="max-h-[calc(82vh-112px)] overflow-y-auto px-6 py-4">
-		        <div className="grid gap-2 text-sm text-muted-foreground">
-		          <WarningCallout>
-		            Warning：这里存在 LLM 黑盒不确定性。所有自动拆解、规则候选和评分契约都必须可追溯、可修改、可确认。
-		          </WarningCallout>
-	          <InfoRow
-	            label="底层原理"
-	            value="LLM 不是数据库查询或确定性规则引擎。它是在上下文里做语义压缩、模式匹配和结构化生成；baseline schema 只能约束输出形状，不能保证理解一定正确。"
-	            wide
-	          />
-	          <InfoRow
-	            label="为什么有风险"
-	            value="当输入材料含糊、缺字段、口头偏好不稳定时，LLM 会倾向于补全合理但未被证据支持的连接，也可能漏掉低显著度约束或重新排序重点。"
-	            wide
-	          />
-	          <InfoRow
-	            label="Content Brief 逻辑"
-	            value="LLM 从标题、目标、底稿和 Output Contract 中抽取任务、受众、目的、已知事实、证据缺口、交付约束；它应该只压缩和归一，不应新增事实。"
-	            wide
-	          />
-	          <InfoRow
-	            label="Content Brief 风险"
-	            value="可能出现新增事实、遗漏限制、误判受众、把写法参考当事实、把主管偏好过度泛化，或把低置信内容写成确定结论。"
-	            wide
-	          />
-	          <InfoRow
-	            label="后果"
-	            value="Content Brief 一旦错，Draft 会跑题或事实漂移；Eval Profile 会按错误目标评分；风险检查可能漏报；Writing Skill Candidate 会沉淀错误写法。"
-	            wide
-	          />
-	          <InfoRow
-	            label="检查指导"
-	            value="逐项看来源、派生结果和影响：是否能回到输入字段，是否新增未给出的事实，是否遗漏关键限制，是否会改变生成方向或评分标准。任一不通过就修改输入或检查项，不进入候选生成。"
-	            wide
-	          />
-	          <InfoRow
-	            label="LLM 做什么"
-	            value="LLM 自动拆解原始输入，生成 Content Brief、写法规则候选、风险检查和 Eval Profile 初稿。"
-		            wide
-		          />
-		          <InfoRow
-		            label="规则是什么"
-		            value="规则不是自由 prompt，而是内置 baseline schema：问题定义、事实边界、交付结构、写法模式、评审偏好、风险。"
-		            wide
-		          />
-		          <InfoRow
-		            label="用户做什么"
-		            value="用户确认或修改 Precheck Candidate。确认前不会进入候选生成；确认后才把它当作本轮生成契约。"
-		            wide
-		          />
-		          <InfoRow
-		            label="方法论"
-		            value="方法论不是占位文案。它是 baseline 的设计依据，默认收在这里，不在每张检查卡里重复展示。"
-	            wide
-	          />
-	          <InfoRow
-	            label="来源关系"
-	            value="输入字段与检查项是一对多关系。点击或聚焦左侧字段时，右侧关联检查项高亮；未关联检查项降灰。"
-	            wide
-	          />
-	          <InfoRow
-	            label="来源：底稿"
-	            value="表示该检查项依赖事实、证据和缺口边界；影响素材忠实度、事实风险和是否需要补料。"
-	          />
-	          <InfoRow
-	            label="来源：Output Contract"
-	            value="表示该检查项依赖产物类型、长度、结构、格式和下游 handoff；影响候选文本形态和 Eval Profile，不代表写作事实。"
-	          />
-	          <InfoRow
-	            label="依赖关系"
-	            value="输入区变化后，检查区自动刷新；确认按钮只负责进入候选区。"
-	            wide
-	          />
-	          <InfoRow
-	            label="检查模块影响"
-	            value="Content Brief 进入 Draft 上下文；写法规则进入 Candidate 约束；Precheck Candidate 派生 Eval Profile；风险检查进入扣分、阻断和发布判断。"
-	            wide
-	          />
-	          <InfoRow
-	            label="方法论映射"
-	            value="Content Brief 对应 Creative Brief / Grounding；写法规则对应 Few-shot / Skill；Eval Profile 对应 Eval-driven Development；风险检查对应 Grounding risk / Style transfer risk / Preference calibration。"
-	            wide
-	          />
-	          <InfoRow
-	            label="baseline 边界"
-	            value="当前只能改本轮内容和检查结果；新增字段、规则类型、风格类型需要改代码。"
-            wide
-          />
-	        </div>
-	        </div>
-	      </DialogContent>
-    </Dialog>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  icon: ComponentType<{ className?: string }>;
-}) {
-  return (
-    <div className="rounded-lg border bg-card px-3 py-2">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Icon className="size-4" />
-        <span className="text-xs">{label}</span>
+      ) : null}
+      <div className="mt-2 rotate-180 text-[11px] font-medium uppercase tracking-wide text-muted-foreground [writing-mode:vertical-rl]">
+        上下文
       </div>
-      <div className="mt-1 text-sm font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function FlowStep({
-  label,
-  active,
-  done,
-}: {
-  label: string;
-  active: boolean;
-  done: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-md border px-3 py-2",
-        active && "border-zinc-500 bg-zinc-700 text-zinc-100",
-        done && !active && "border-zinc-600 bg-zinc-800 text-zinc-300",
-        !active && !done && "border-zinc-700 text-zinc-500",
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-mono">{label}</span>
-        {done ? <CheckCircle2 className="size-3.5" /> : null}
-      </div>
-    </div>
-  );
-}
-
-function StepMark({ value, active }: { value: string; active: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-2 font-mono text-xs",
-        active ? "border-zinc-700 bg-zinc-700 text-zinc-100" : "border-zinc-200 bg-zinc-100 text-zinc-500",
-      )}
-    >
-      {value}
-    </span>
-  );
-}
-
-function InputRelationStep({
-  index,
-  title,
-  body,
-  sourceKey,
-  activeSource,
-  onActivate,
-  onClear,
-}: {
-  index: string;
-  title: string;
-  body: string;
-  sourceKey: SourceKey;
-  activeSource: SourceKey | null;
-  onActivate: (sourceKey: SourceKey) => void;
-  onClear: () => void;
-}) {
-  const active = activeSource === sourceKey;
-
-  return (
-    <div
-      className={cn(
-        "rounded-md border bg-white p-2 transition",
-        active && "border-zinc-500 shadow-sm",
-      )}
-      onMouseEnter={() => onActivate(sourceKey)}
-      onMouseLeave={onClear}
-      onFocus={() => onActivate(sourceKey)}
-      onBlur={onClear}
-      tabIndex={0}
-    >
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            "inline-flex h-5 w-5 items-center justify-center rounded font-mono text-[10px]",
-            active ? "bg-zinc-900 text-white" : "bg-zinc-700 text-zinc-100",
-          )}
-        >
-          {index}
-        </span>
-        <span className="font-medium">{title}</span>
-      </div>
-      <div className="mt-1 text-muted-foreground">{body}</div>
-    </div>
+    </aside>
   );
 }
 
@@ -2059,130 +2346,12 @@ function Field({
         "block space-y-2 rounded-lg border border-transparent p-2 transition",
         active && "border-zinc-400 bg-zinc-50",
 	      )}
-	      onMouseEnter={() => sourceKey && onActivate?.(sourceKey)}
-	      onMouseLeave={onClear}
 	      onFocusCapture={() => sourceKey && onActivate?.(sourceKey)}
+	      onBlurCapture={onClear}
 	    >
       <span className="text-sm font-medium">{label}</span>
       {children}
     </label>
-  );
-}
-
-function SectionTitle({
-  icon: Icon,
-  title,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  title: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 text-sm font-semibold">
-      <Icon className="size-4" />
-      {title}
-    </div>
-  );
-}
-
-function WarningCallout({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700" />
-      <div>
-        <div className="font-medium">Warning</div>
-        <p className="mt-1 leading-5">{children}</p>
-      </div>
-    </div>
-  );
-}
-
-function TraceCard({
-  title,
-  source,
-  sourceKeys,
-  activeSource,
-  detail,
-  impact,
-  iteration,
-  badge,
-}: {
-  title: string;
-  source: string;
-  sourceKeys: SourceKey[];
-  activeSource: SourceKey | null;
-  detail: string;
-  impact: string;
-  iteration: string;
-  badge?: string;
-}) {
-  const active = activeSource !== null && sourceKeys.includes(activeSource);
-  const dimmed = activeSource !== null && !active;
-
-	return (
-	  <div
-	    data-source-keys={sourceKeys.join(" ")}
-	    className={cn(
-	      "relative overflow-hidden rounded-lg border bg-white p-3 text-sm transition-all duration-200",
-	      !active && !dimmed && "border-dashed border-zinc-200 bg-zinc-50",
-	      active &&
-	        "z-10 scale-[1.015] border-zinc-900 bg-white shadow-xl shadow-zinc-900/15 ring-4 ring-zinc-900/10",
-	      dimmed && "border-zinc-200 bg-zinc-100 opacity-45 grayscale",
-	    )}
-	  >
-	    {dimmed ? <div className="pointer-events-none absolute inset-0 bg-zinc-200/45" /> : null}
-	      <div className="flex flex-wrap items-center justify-between gap-2">
-	        <div className="font-medium">{title}</div>
-	        <div className="flex items-center gap-2">
-          <Badge
-	            variant="outline"
-	            className={cn(
-	              "border-dashed bg-white font-normal text-zinc-600",
-	              active && "border-zinc-900 bg-zinc-900 text-white",
-	            )}
-	          >
-	            来源：{source}
-          </Badge>
-          {badge ? (
-            <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-900">
-              {badge}
-            </Badge>
-          ) : null}
-	        </div>
-	      </div>
-	      <div className="mt-3 space-y-3">
-	        <p className="leading-6 text-zinc-800">{detail}</p>
-	        <div className="grid gap-2">
-	          <TraceLine label="影响" value={impact} />
-	          <TraceLine label="迭代" value={iteration} />
-	        </div>
-	      </div>
-	    </div>
-	  );
-}
-
-function TraceLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid gap-1 sm:grid-cols-[44px_1fr]">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <p className="text-muted-foreground">{value}</p>
-    </div>
-  );
-}
-
-function InfoRow({
-  label,
-  value,
-  wide,
-}: {
-  label: string;
-  value: string;
-  wide?: boolean;
-}) {
-  return (
-    <div className={cn("rounded-md border bg-muted/30 px-3 py-2", wide && "md:col-span-2")}>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-medium leading-5">{value}</div>
-    </div>
   );
 }
 
@@ -2197,22 +2366,22 @@ function FinalizeExportPanel({
   selectedCandidateId: string;
   onSelectCandidate: (candidateId: string) => void;
   onBack: () => void;
-  onExportDoc: (candidate: CandidateRecord) => void;
+  onExportDoc: (candidate: CandidateRecord) => Promise<void> | void;
 }) {
   const selectedDraft = drafts.find((draft) => draft.id === selectedCandidateId) ?? drafts[0];
 
   return (
-    <Card className="rounded-lg border-2 border-zinc-950 bg-white text-zinc-950 shadow-sm">
-      <CardHeader>
+    <div className="text-zinc-950">
+      <div className="border-b pb-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2 text-base">
+            <h2 className="flex items-center gap-2 text-base font-semibold">
               <StepMark active value="定稿" />
-              Finalize Export
-            </CardTitle>
-            <CardDescription>
+              定稿导出
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
               只做最终选择和导出。这里不打反馈、不生成规则、不运行下一批。
-            </CardDescription>
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={onBack}>
@@ -2221,19 +2390,23 @@ function FinalizeExportPanel({
             <Button
               size="sm"
               disabled={!selectedDraft}
-              onClick={() => selectedDraft && onExportDoc(selectedDraft)}
+              onClick={() => {
+                if (selectedDraft) {
+                  void onExportDoc(selectedDraft);
+                }
+              }}
             >
               <Download className="size-4" />
               导出本次 DOC
             </Button>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      </div>
+      <div className="space-y-4 pt-4">
         <section className="rounded-lg border bg-zinc-50 p-3 text-sm">
           <div className="font-medium">定稿规则</div>
           <p className="mt-1 text-muted-foreground">
-            当前只从本批候选中选择 1 个 Text Artifact 导出；TTS、视觉指导和 DOCX 排版是下游节点或 Export Package 节点职责。
+            当前只从本批候选中选择 1 个文本产物导出；TTS、视觉指导和 DOCX 排版是下游节点或导出包节点职责。
           </p>
         </section>
 
@@ -2259,10 +2432,10 @@ function FinalizeExportPanel({
                   </Badge>
                   <span className="text-sm font-semibold">{draft.total}</span>
                 </div>
-                <h3 className="mt-3 line-clamp-2 text-base font-semibold">{draft.title}</h3>
-                <p className="mt-2 text-xs text-muted-foreground">{draft.summary}</p>
+                <h3 className="mt-3 line-clamp-2 break-words text-base font-semibold [overflow-wrap:anywhere]">{draft.title}</h3>
+                <p className="mt-2 line-clamp-3 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">{draft.summary}</p>
                 <div className="mt-4 flex-1 overflow-hidden rounded-lg border bg-white p-3">
-                  <p className="line-clamp-6 text-sm leading-6 text-zinc-800">{draft.excerpt}</p>
+                  <p className="line-clamp-6 break-words text-sm leading-6 text-zinc-800 [overflow-wrap:anywhere]">{draft.excerpt}</p>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span>{active ? "已选为本次定稿" : "点击选择"}</span>
@@ -2272,8 +2445,71 @@ function FinalizeExportPanel({
             );
           })}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
+  );
+}
+
+function ReviewNextActionBar({
+  run,
+  runtimeBusy,
+  onRunGenerationBatch,
+}: {
+  run: WritingRunRecord;
+  runtimeBusy: boolean;
+  onRunGenerationBatch: () => Promise<void> | void;
+}) {
+  const draftPatches = run.rulePatches.filter((item) => item.status === "draft");
+  const unprocessedFeedback = run.feedback.filter((item) => (item.status ?? "unprocessed") === "unprocessed");
+  const compiledFeedback = run.feedback.filter((item) => item.status === "compiled");
+  const hasDecisionWork = draftPatches.length > 0 || unprocessedFeedback.length > 0 || compiledFeedback.length > 0;
+
+  if (!hasDecisionWork) {
+    return (
+      <section className="mb-4 min-h-[88px] rounded-lg border border-dashed bg-zinc-50 p-3 text-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">规则队列为空</span>
+              <Badge variant="outline">0 条规则草稿</Badge>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              选中文本并打标签后，这里会出现下一批生成入口；旧候选不会被改写。
+            </p>
+          </div>
+          <Button size="sm" variant="outline" disabled>
+            等待反馈
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mb-4 min-h-[88px] rounded-lg border-2 border-zinc-900 bg-white p-3 text-sm shadow-sm">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold">反馈已进入规则队列</span>
+            <Badge variant={draftPatches.length ? "secondary" : "outline"}>
+              {draftPatches.length} 条规则草稿
+            </Badge>
+            <Badge variant="outline">{compiledFeedback.length} 条反馈已编译</Badge>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            旧候选不改写；点击运行下一批后，系统才用当前规则快照生成新候选。
+          </p>
+        </div>
+        <Button
+          size="sm"
+          disabled={runtimeBusy || draftPatches.length === 0}
+          onClick={onRunGenerationBatch}
+        >
+          运行下一批
+          <ArrowRight className="size-4" />
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -2297,9 +2533,16 @@ function CandidateWorkspace({
   disabled?: boolean;
 }) {
   const [selectedQuote, setSelectedQuote] = useState("");
+  const [selectionWasTruncated, setSelectionWasTruncated] = useState(false);
+  const [readingTab, setReadingTab] = useState("body");
   const selectedFeedbacks = feedback.filter(
     (item) => item.candidateId === selectedDraft.id && item.kind === "selection",
   );
+
+  useEffect(() => {
+    setSelectedQuote("");
+    setSelectionWasTruncated(false);
+  }, [selectedDraft.id]);
 
   function captureSelection() {
     const quote = window.getSelection()?.toString().trim().replace(/\s+/g, " ") ?? "";
@@ -2307,6 +2550,8 @@ function CandidateWorkspace({
       return;
     }
 
+    setReadingTab("body");
+    setSelectionWasTruncated(quote.length > 180);
     setSelectedQuote(quote.slice(0, 180));
   }
 
@@ -2327,6 +2572,7 @@ function CandidateWorkspace({
     });
     window.getSelection()?.removeAllRanges();
     setSelectedQuote("");
+    setSelectionWasTruncated(false);
   }
 
   return (
@@ -2370,7 +2616,7 @@ function CandidateWorkspace({
                     {draft.total}
                   </span>
                 </div>
-                <div className="mt-2 line-clamp-2 text-sm font-medium text-zinc-950">
+                <div className="mt-2 line-clamp-2 break-words text-sm font-medium text-zinc-950 [overflow-wrap:anywhere]">
                   {draft.title}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
@@ -2400,16 +2646,16 @@ function CandidateWorkspace({
       <article className="overflow-hidden rounded-xl border bg-white shadow-sm">
         <div className="border-b bg-zinc-50/90 p-4">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-            <div>
+            <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary" className="font-mono">
-                  {selectedDraft.version || `Version ${selectedIndex + 1}`}
+                  {selectedDraft.version || `版本 ${selectedIndex + 1}`}
                 </Badge>
                 {selectedIndex === bestDraftIndex ? <Badge variant="outline">当前最高分</Badge> : null}
                 <Badge variant="outline">长文阅读器</Badge>
               </div>
-              <h3 className="mt-2 text-lg font-semibold">{selectedDraft.title}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{selectedDraft.summary}</p>
+              <h3 className="mt-2 line-clamp-2 break-words text-lg font-semibold [overflow-wrap:anywhere]">{selectedDraft.title}</h3>
+              <p className="mt-1 line-clamp-2 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">{selectedDraft.summary}</p>
             </div>
             <div className="flex min-w-32 items-center gap-2 rounded-lg border bg-white px-3 py-2 shadow-sm">
               <BarChart3 className="size-4 text-muted-foreground" />
@@ -2421,7 +2667,7 @@ function CandidateWorkspace({
           </div>
         </div>
 
-        <div className="space-y-4 p-4">
+        <div className="flex flex-col gap-4 p-4">
           <section className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50/25">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2">
               <div className="flex items-center gap-2 text-sm font-semibold">
@@ -2436,754 +2682,141 @@ function CandidateWorkspace({
                 ) : null}
               </div>
             </div>
-            <div className="max-h-[62vh] overflow-y-auto bg-white/80">
-              <p
-                className="whitespace-pre-wrap p-5 text-[15px] leading-8 text-zinc-900 selection:bg-amber-200 selection:text-zinc-950"
-                onMouseUp={captureSelection}
-                onKeyUp={captureSelection}
-              >
-                {selectedDraft.excerpt}
-              </p>
-            </div>
-          </section>
+            <Tabs value={readingTab} onValueChange={setReadingTab} className="bg-white/80">
+              <div className="border-b bg-white px-3 py-2">
+                <TabsList className="grid w-full grid-cols-3 md:w-[420px]">
+                  <TabsTrigger value="body">正文</TabsTrigger>
+                  <TabsTrigger value="brief">摘要</TabsTrigger>
+                  <TabsTrigger value="eval">评分</TabsTrigger>
+                </TabsList>
+              </div>
 
-          {selectedQuote ? (
-            <section className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3 text-sm shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-semibold">轻反馈标签</div>
-                  <p className="mt-1 max-w-2xl text-muted-foreground">
-                    点标签即写入反馈账本，并自动生成规则草稿；标签不再堆在正文卡片里。
+              <TabsContent value="body" className="m-0">
+                {selectedQuote ? (
+                  <section className="border-b border-amber-200 bg-amber-50 p-3 text-sm shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold">选中文本反馈</div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          点一个标签即写入反馈账本，并自动生成规则草稿。
+                          {selectionWasTruncated ? " 已截断到 180 字。" : ""}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 shrink-0"
+                        onClick={() => {
+                          setSelectedQuote("");
+                          setSelectionWasTruncated(false);
+                        }}
+                        aria-label="取消选中文本反馈"
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    </div>
+                    <blockquote className="mt-3 break-words rounded-lg border-l-4 border-amber-500 bg-white px-3 py-2 text-zinc-800 [overflow-wrap:anywhere]">
+                      {selectedQuote}
+                    </blockquote>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled || !onFeedback}
+                        onClick={() => submitSelectionFeedback("revise")}
+                      >
+                        事实/任务不准
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled || !onFeedback}
+                        onClick={() => submitSelectionFeedback("rejected")}
+                      >
+                        风格不对
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled || !onFeedback}
+                        onClick={() => submitSelectionFeedback("rewrite")}
+                      >
+                        需要压缩
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={disabled || !onFeedback}
+                        onClick={() => submitSelectionFeedback("liked")}
+                      >
+                        喜欢这段
+                      </Button>
+                    </div>
+                  </section>
+                ) : null}
+                <ScrollArea className="h-[min(62vh,760px)] bg-white/80">
+                  <p
+                    className="whitespace-pre-wrap break-words p-5 text-[15px] leading-8 text-zinc-900 selection:bg-amber-200 selection:text-zinc-950 [overflow-wrap:anywhere]"
+                    onMouseUp={captureSelection}
+                    onKeyUp={captureSelection}
+                  >
+                    {selectedDraft.excerpt}
                   </p>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-zinc-900"
-                  onClick={() => setSelectedQuote("")}
-                  aria-label="取消选中文本反馈"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-              <blockquote className="mt-3 rounded-lg border-l-4 border-amber-500 bg-white px-3 py-2 text-zinc-800">
-                {selectedQuote}
-              </blockquote>
+                </ScrollArea>
+              </TabsContent>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium shadow-sm hover:border-zinc-900 hover:bg-zinc-950 hover:text-white"
-                  disabled={disabled || !onFeedback}
-                  onClick={() => submitSelectionFeedback("revise")}
-                >
-                  不满意
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-800 shadow-sm hover:border-emerald-700 hover:bg-emerald-700 hover:text-white"
-                  disabled={disabled || !onFeedback}
-                  onClick={() => submitSelectionFeedback("liked")}
-                >
-                  喜欢
-                </button>
-                <button
-                  type="button"
-                  className="rounded-full border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 shadow-sm hover:border-sky-700 hover:bg-sky-700 hover:text-white"
-                  disabled={disabled || !onFeedback}
-                  onClick={() => submitSelectionFeedback("rewrite")}
-                >
-                  需要改写
-                </button>
-              </div>
-            </section>
-          ) : null}
+              <TabsContent value="brief" className="m-0">
+                <ScrollArea className="h-[min(62vh,760px)] bg-white/80">
+                  <div className="grid gap-3 p-4 md:grid-cols-2">
+                    <div className="rounded-lg border bg-zinc-50 p-3">
+                      <div className="text-xs font-medium text-muted-foreground">Summary</div>
+                      <p className="mt-2 text-sm leading-6 text-zinc-900">{selectedDraft.summary}</p>
+                    </div>
+                    <div className="rounded-lg border bg-zinc-50 p-3">
+                      <div className="text-xs font-medium text-muted-foreground">Rationale</div>
+                      <p className="mt-2 text-sm leading-6 text-zinc-900">{selectedDraft.rationale}</p>
+                    </div>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 md:col-span-2">
+                      <div className="flex items-center gap-2 text-xs font-medium text-amber-800">
+                        <AlertTriangle className="size-4" />
+                        Risk
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-amber-950">{selectedDraft.risk}</p>
+                    </div>
+                  </div>
+                </ScrollArea>
+              </TabsContent>
 
-          <section className="rounded-xl border bg-zinc-50 p-3">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold">Auto Eval</div>
-              <Badge variant="outline" className="bg-white">backend rubric</Badge>
-            </div>
-            <div className="grid gap-3 md:grid-cols-4">
-              <Score label="基础质量" source="Auto Eval" value={selectedDraft.breakdown.quality} />
-              <Score label="任务匹配" source="Auto Eval" value={selectedDraft.breakdown.fit} />
-              <Score label="风格偏好" source="Auto Eval" value={selectedDraft.breakdown.style} />
-              <Score label="风险扣分" source="Auto Eval" value={selectedDraft.breakdown.risk} danger />
-            </div>
+              <TabsContent value="eval" className="m-0">
+                <ScrollArea className="h-[min(62vh,760px)] bg-zinc-50">
+                  <div className="p-4">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <div className="text-sm font-semibold">自动评分</div>
+                      <Badge variant="outline" className="bg-white">后台评分口径</Badge>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-4">
+                      <Score label="基础质量" source="自动评分" value={selectedDraft.breakdown.quality} />
+                      <Score label="任务匹配" source="自动评分" value={selectedDraft.breakdown.fit} />
+                      <Score label="风格偏好" source="自动评分" value={selectedDraft.breakdown.style} />
+                      <Score label="风险扣分" source="自动评分" value={selectedDraft.breakdown.risk} danger />
+                    </div>
+                    <p className="mt-4 rounded-lg border bg-white px-3 py-2 text-xs leading-5 text-muted-foreground">
+                      人工动作只保留“选中文本 + 打标签”。系统会自动归因并生成规则草稿，右侧反馈账本负责展示处理状态。
+                    </p>
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+            </Tabs>
           </section>
 
-          <div className="flex flex-col gap-3 border-t pt-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-1 text-sm">
-              <p>{selectedDraft.rationale}</p>
-              <p className="flex items-center gap-2 text-muted-foreground">
-                <AlertTriangle className="size-4 text-amber-600" />
-                {selectedDraft.risk}
-              </p>
-            </div>
-            <p className="max-w-sm rounded-lg border bg-zinc-50 px-3 py-2 text-xs text-muted-foreground">
-              人工动作只保留“选中文本 + 打标签”。系统会自动归因并生成规则草稿，右侧反馈账本负责展示处理状态。
-            </p>
-          </div>
         </div>
       </article>
     </section>
-  );
-}
-
-function CandidateWorkflowPanel({
-  run,
-  latestGenerationRunId,
-  runtimeBusy,
-  onRunGenerationBatch,
-}: {
-  run: WritingRunRecord;
-  latestGenerationRunId?: string;
-  runtimeBusy?: boolean;
-  onRunGenerationBatch: () => Promise<void> | void;
-}) {
-  const generationRuns = run.generationRuns ?? [];
-  const ruleSnapshots = run.ruleSnapshots ?? [];
-  const rulePatches = run.rulePatches ?? [];
-  const latestGenerationRun =
-    generationRuns.find((item) => item.id === latestGenerationRunId) ?? generationRuns.at(-1);
-  const activeRuleSnapshot =
-    ruleSnapshots.find((item) => item.id === latestGenerationRun?.ruleSnapshotId) ??
-    ruleSnapshots.at(-1);
-  const unprocessedFeedback = run.feedback.filter(
-    (item) => (item.status ?? "unprocessed") === "unprocessed",
-  );
-  const compiledFeedback = run.feedback.filter((item) => item.status === "compiled");
-  const draftPatches = rulePatches.filter((item) => item.status === "draft");
-  const appliedPatches = rulePatches.filter((item) => item.status === "applied");
-  const nextAction =
-    unprocessedFeedback.length > 0
-      ? "反馈已写入，系统会自动编译为规则草稿。"
-      : draftPatches.length > 0
-        ? "规则草稿已准备好，可以运行下一批。"
-        : "继续阅读候选，选中文本打标签。";
-
-  return (
-    <section className="rounded-lg border-2 border-zinc-900 bg-white p-4 text-sm shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <SectionTitle icon={CircleDot} title="决策侧栏" />
-            <Badge variant="secondary">编辑 / 决策</Badge>
-          </div>
-          <p className="mt-2 text-muted-foreground">
-            反馈会自动合并为最多 {RULE_PATCH_DRAFT_LIMIT} 条规则草稿；旧候选冻结保存，运行下一批才生成新版本。
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-lg border bg-zinc-50 p-3">
-        <div className="text-xs text-muted-foreground">下一步</div>
-        <div className="mt-1 text-sm font-semibold">{nextAction}</div>
-      </div>
-
-      <Button
-        className="mt-3 w-full"
-        size="sm"
-        disabled={runtimeBusy || draftPatches.length === 0}
-        onClick={onRunGenerationBatch}
-      >
-        运行下一批
-      </Button>
-
-      <div className="mt-4 grid gap-2">
-        <WorkflowStep
-          title="1. Feedback"
-          value={`${unprocessedFeedback.length} 未处理`}
-          detail={`${compiledFeedback.length} 已编译 / ${run.feedback.length} total`}
-          active={unprocessedFeedback.length > 0}
-          done={run.feedback.length > 0 && unprocessedFeedback.length === 0}
-        />
-        <WorkflowStep
-          title="2. Rule Patch"
-          value={`${draftPatches.length}/${RULE_PATCH_DRAFT_LIMIT} 草稿`}
-          detail={`${appliedPatches.length} 已用于规则快照；超出自动合并`}
-          active={draftPatches.length > 0}
-          done={appliedPatches.length > 0 && draftPatches.length === 0}
-        />
-        <WorkflowStep
-          title="3. Rule Snapshot"
-          value={activeRuleSnapshot?.version ?? "rules-v1"}
-          detail={`${activeRuleSnapshot?.rules.length ?? 0}/${RULE_SNAPSHOT_RULE_LIMIT} active rules；${ruleSnapshots.length || 1} 个版本`}
-          active={false}
-          done={ruleSnapshots.length > 0}
-        />
-        <WorkflowStep
-          title="4. Generation Run"
-          value={latestGenerationRun ? `第 ${latestGenerationRun.round} 批` : "待生成"}
-          detail={`${generationRuns.length} 批已保存`}
-          active={false}
-          done={generationRuns.length > 0}
-        />
-      </div>
-    </section>
-  );
-}
-
-function DecisionQueuePanel({
-  run,
-  disabled,
-  onDeleteFeedback,
-}: {
-  run: WritingRunRecord;
-  disabled?: boolean;
-  onDeleteFeedback?: (feedbackId: string) => Promise<void> | void;
-}) {
-  const unprocessedFeedback = run.feedback.filter(
-    (item) => (item.status ?? "unprocessed") === "unprocessed",
-  );
-  const compiledFeedback = run.feedback.filter((item) => item.status === "compiled");
-  const draftPatches = run.rulePatches.filter((item) => item.status === "draft");
-  const appliedPatches = run.rulePatches.filter((item) => item.status === "applied");
-
-  return (
-    <section className="rounded-lg border bg-white p-4 text-sm shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <SectionTitle icon={BookOpenCheck} title="处理队列" />
-          <p className="mt-2 text-muted-foreground">
-            这里不编辑正文，只显示哪些反馈会进入规则；草稿超过上限会自动合并，不继续堆积。
-          </p>
-        </div>
-        <Badge variant="outline">队列</Badge>
-      </div>
-
-      <div className="mt-4 space-y-3">
-        <section className="rounded-lg border bg-zinc-50 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-medium">反馈账本</div>
-            <Badge variant={run.feedback.length ? "secondary" : "muted"}>
-              {run.feedback.length} total
-            </Badge>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-            <div className="rounded-md border bg-white p-2">
-              <div className="text-muted-foreground">已编译</div>
-              <div className="mt-1 text-sm font-semibold">{compiledFeedback.length}</div>
-            </div>
-            <div className="rounded-md border bg-white p-2">
-              <div className="text-muted-foreground">待处理</div>
-              <div className="mt-1 text-sm font-semibold">{unprocessedFeedback.length}</div>
-            </div>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            打标签后先进入反馈账本；自动生成规则草稿后，反馈会从“待处理”移到“已编译”。
-          </p>
-        </section>
-
-        <section className="rounded-lg border bg-zinc-50 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-medium">待处理反馈</div>
-            <Badge variant={unprocessedFeedback.length ? "secondary" : "muted"}>
-              {unprocessedFeedback.length}
-            </Badge>
-          </div>
-          <div className="mt-3 space-y-2">
-            {unprocessedFeedback.slice(0, 4).map((feedback) => (
-              <div key={feedback.id} className="rounded-md border bg-white p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {feedback.candidateId}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <Badge variant="outline">{feedback.businessReason ?? feedback.kind}</Badge>
-                    {onDeleteFeedback ? (
-                      <button
-                        type="button"
-                        className="rounded-full p-1 text-muted-foreground hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40"
-                        disabled={disabled}
-                        onClick={() => onDeleteFeedback(feedback.id)}
-                        aria-label="删除反馈标签"
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                <p className="mt-1 line-clamp-2 text-xs text-zinc-700">
-                  {feedback.quote || feedback.note}
-                </p>
-              </div>
-            ))}
-            {!unprocessedFeedback.length ? (
-              <p className="text-xs text-muted-foreground">
-                暂无待处理反馈。去左侧阅读区选中文本并点一个标签。
-              </p>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="rounded-lg border bg-zinc-50 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-medium">规则草稿</div>
-            <Badge variant={draftPatches.length ? "secondary" : "muted"}>
-              {draftPatches.length}/{RULE_PATCH_DRAFT_LIMIT}
-            </Badge>
-          </div>
-          <div className="mt-3 space-y-2">
-            {draftPatches.slice(0, RULE_PATCH_DRAFT_LIMIT).map((patch) => (
-              <div key={patch.id} className="rounded-md border bg-white p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {patch.sourceCandidateId}
-                  </span>
-                  <Badge variant="outline">{patch.status}</Badge>
-                </div>
-                <p className="mt-1 text-xs font-medium">{patch.rule}</p>
-                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{patch.reason}</p>
-              </div>
-            ))}
-            {!draftPatches.length ? (
-              <p className="text-xs text-muted-foreground">
-                暂无规则草稿。去左侧阅读区打标签后，系统会自动把反馈编译成规则草稿。
-              </p>
-            ) : null}
-            {draftPatches.length ? (
-              <p className="text-xs text-muted-foreground">
-                草稿池上限 {RULE_PATCH_DRAFT_LIMIT} 条；同类反馈合并，超出后并入最近草稿。Active Rule Snapshot 上限 {RULE_SNAPSHOT_RULE_LIMIT} 条规则。
-              </p>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-          已应用规则 {appliedPatches.length} 条。应用后只生成新的 Rule Snapshot，不回写历史候选。
-        </section>
-      </div>
-    </section>
-  );
-}
-
-function ReadOnlyRunDetails({ run }: { run: WritingRunRecord }) {
-  return (
-    <section className="rounded-lg border bg-white text-sm shadow-sm">
-      <details>
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <SectionTitle icon={FileText} title="只读详情" />
-              <Badge variant="outline">历史 / Eval / Skill</Badge>
-            </div>
-            <p className="mt-1 text-muted-foreground">
-              低频信息默认收起，需要追溯评分、规则和发布证据时再展开。
-            </p>
-          </div>
-          <ArrowRight className="size-4 text-muted-foreground" />
-        </summary>
-
-        <div className="space-y-5 border-t p-4">
-          {run.evalRun ? (
-            <section className="rounded-lg border bg-zinc-50 p-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <SectionTitle icon={BarChart3} title="Eval Run 面板" />
-                  <p className="mt-2 text-muted-foreground">
-                    4 个基础评分来自后台 Auto Eval；人工反馈只校准后续规则，不覆盖系统分。
-                  </p>
-                </div>
-                <Badge variant="outline">{run.evalRun.id}</Badge>
-              </div>
-              <div className="mt-4 grid gap-2 md:grid-cols-3">
-                <InfoRow label="Profile" value={run.evalRun.profileVersion} />
-                <InfoRow label="Risk" value={run.evalRun.riskSummary} />
-                <InfoRow label="Trace" value={`${run.trace.length} events`} />
-              </div>
-              <div className="mt-4 grid gap-3">
-                {run.evalRun.candidateResults.map((result) => (
-                  <div key={result.candidateId} className="rounded-md border bg-white p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-mono text-xs">{result.candidateId}</span>
-                      <Badge variant="secondary">{result.total}</Badge>
-                    </div>
-                    <div className="mt-2 grid gap-2 md:grid-cols-2">
-                      <InfoRow label="强信号" value={result.strongestSignal} />
-                      <InfoRow label="弱信号" value={result.weakestSignal} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <section className="rounded-lg border bg-zinc-50 p-3">
-            <SectionTitle icon={Sparkles} title="Writing Skill Lifecycle" />
-            <p className="mt-2 text-muted-foreground">Candidate 稳定后才可发布为复用资产。</p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <div className="rounded-lg border-2 border-zinc-900 bg-white p-3 shadow-sm">
-                <SectionTitle icon={CircleDot} title="Runtime Skill Candidate" />
-                <div className="mt-3 grid gap-2">
-                  <InfoRow label="ID" value={run.skillCandidate.id} />
-                  <InfoRow label="Human feedback" value={`${run.feedback.length} 条`} />
-                  <InfoRow
-                    label="Mean score"
-                    value={run.skillCandidate.meanHumanScore?.toString() ?? "waiting"}
-                  />
-                  <InfoRow label="Update" value={run.skillCandidate.updateNote} wide />
-                </div>
-              </div>
-              <div className="space-y-3">
-                {lifecycle.map((item) => (
-                  <div
-                    key={item.state}
-                    className={cn(
-                      "rounded-lg border bg-white p-3",
-                      item.status === "active" && "border-primary bg-primary/5",
-                      item.status === "watch" &&
-                        "border-amber-200 bg-amber-50 text-amber-950",
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-mono text-sm">{item.state}</span>
-                      <Badge
-                        variant={
-                          item.status === "active"
-                            ? "secondary"
-                            : item.status === "watch"
-                              ? "outline"
-                              : "muted"
-                        }
-                      >
-                        {item.status}
-                      </Badge>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">{item.note}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-3 rounded-lg border bg-zinc-50 p-3">
-              <SectionTitle icon={CheckCircle2} title="发布前证据" />
-              <div className="grid gap-2">
-                {evidence.map(([label, value]) => (
-                  <InfoRow key={label} label={label} value={value} />
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3 rounded-lg border bg-zinc-50 p-3">
-              <SectionTitle icon={ShieldAlert} title="Drift / Retro Eval" />
-              <WarningCallout>
-                长周期视频反馈和审美变化会导致评分漂移；历史评分不能覆盖，只能追加新版本重评。
-              </WarningCallout>
-              <div className="grid gap-2">
-                {governanceRules.map(([label, value]) => (
-                  <InfoRow key={label} label={label} value={value} />
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="space-y-3 rounded-lg border bg-zinc-50 p-3">
-            <SectionTitle icon={LockKeyhole} title="高级动作" />
-            <div className="rounded-lg border bg-white p-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-medium">技术导出：Codex/Claude SKILL.md</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    仅从 Published Writing Skill 生成，不在普通流程编辑。
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" disabled>
-                  等待发布
-                </Button>
-              </div>
-            </div>
-          </section>
-        </div>
-      </details>
-    </section>
-  );
-}
-
-function WorkflowStep({
-  title,
-  value,
-  detail,
-  active,
-  done,
-}: {
-  title: string;
-  value: string;
-  detail: string;
-  active?: boolean;
-  done?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-lg border bg-white p-3",
-        active && "border-zinc-900 shadow-sm",
-        done && !active && "border-emerald-200 bg-emerald-50/40",
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-xs font-medium text-muted-foreground">{title}</div>
-        {done ? <CheckCircle2 className="size-3.5 text-emerald-700" /> : null}
-      </div>
-      <div className="mt-2 text-sm font-semibold">{value}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
-    </div>
-  );
-}
-
-function DraftCard({
-  draft,
-  index,
-  isBest,
-  selectionFeedbackCount,
-  selectionFeedbacks = [],
-  onFeedback,
-  onDeleteFeedback,
-  disabled,
-}: {
-  draft: CandidateRecord;
-  index: number;
-  isBest: boolean;
-  selectionFeedbackCount?: number;
-  selectionFeedbacks?: HumanFeedbackRecord[];
-  onFeedback?: (feedback: HumanFeedbackInput) => Promise<void> | void;
-  onDeleteFeedback?: (feedbackId: string) => Promise<void> | void;
-  disabled?: boolean;
-}) {
-  const [selectedQuote, setSelectedQuote] = useState("");
-  const currentSelectionFeedbackCount = selectionFeedbacks.length || selectionFeedbackCount || 0;
-
-  function captureSelection() {
-    const quote = window.getSelection()?.toString().trim().replace(/\s+/g, " ") ?? "";
-    if (quote.length < 2) {
-      return;
-    }
-
-    setSelectedQuote(quote.slice(0, 180));
-  }
-
-  async function submitSelectionFeedback(verdict: SelectionFeedbackDraft["verdict"]) {
-    const draftFeedback = analyzeSelectionFeedback(draft, selectedQuote, verdict);
-    await onFeedback?.({
-      kind: "selection",
-      candidateId: draft.id,
-      score: null,
-      quote: draftFeedback.quote,
-      verdict: draftFeedback.verdict,
-      businessReason: draftFeedback.businessReason,
-      likelyCause: draftFeedback.likelyCause,
-      issue: draftFeedback.issue,
-      expected: draftFeedback.expected,
-      confidence: draftFeedback.confidence,
-      note: `选中文本反馈：${draftFeedback.businessReason} / ${draftFeedback.issue}`,
-    });
-    window.getSelection()?.removeAllRanges();
-    setSelectedQuote("");
-  }
-
-  return (
-    <article
-      className={cn(
-        "overflow-hidden rounded-xl border bg-white shadow-sm ring-1 ring-zinc-950/5 transition-shadow",
-        isBest ? "border-zinc-900 shadow-lg" : "border-zinc-200",
-      )}
-    >
-      <div className="flex flex-col gap-3 border-b bg-zinc-50/90 p-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant={isBest ? "secondary" : "muted"}
-              className="font-mono"
-            >
-              {draft.version || `Version ${index + 1}`}
-            </Badge>
-            {isBest ? <Badge variant="outline">当前最高分</Badge> : null}
-            <h3 className="text-base font-semibold">{draft.title}</h3>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            同一生成契约下的候选版本 {index + 1}，用于和其他版本横向比较。
-          </p>
-          <p className="text-sm text-muted-foreground">{draft.summary}</p>
-        </div>
-        <div className="flex min-w-32 items-center gap-2 rounded-lg border bg-white px-3 py-2 shadow-sm">
-          <BarChart3 className="size-4 text-muted-foreground" />
-          <div>
-            <div className="text-lg font-semibold">{draft.total}</div>
-            <div className="text-xs text-muted-foreground">auto score</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-4 p-4">
-        <section className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50/25">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <BookOpenCheck className="size-4 text-amber-700" />
-              阅读区
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Sparkles className="size-3.5 text-amber-600" />
-              <span>选中片段后点一个标签，立即记录反馈。</span>
-              {currentSelectionFeedbackCount ? (
-                <Badge variant="secondary">{currentSelectionFeedbackCount} 条局部反馈</Badge>
-              ) : null}
-            </div>
-          </div>
-          <p
-            className="bg-white/70 p-4 text-[15px] leading-7 text-zinc-900 selection:bg-amber-200 selection:text-zinc-950"
-            onMouseUp={captureSelection}
-            onKeyUp={captureSelection}
-          >
-            {draft.excerpt}
-          </p>
-        </section>
-
-        {selectedQuote ? (
-          <section className="rounded-xl border-2 border-amber-300 bg-amber-50 p-3 text-sm shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-semibold">轻反馈标签</div>
-                <p className="mt-1 max-w-2xl text-muted-foreground">
-                  系统用选中文本、Job Spec 和 Eval Profile 自动归因；点标签即写入反馈账本并生成规则草稿。
-                </p>
-              </div>
-              <button
-                type="button"
-                className="rounded-full p-1 text-muted-foreground hover:bg-white hover:text-zinc-900"
-                onClick={() => setSelectedQuote("")}
-                aria-label="取消选中文本反馈"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            <blockquote className="mt-3 rounded-lg border-l-4 border-amber-500 bg-white px-3 py-2 text-zinc-800">
-              {selectedQuote}
-            </blockquote>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium shadow-sm hover:border-zinc-900 hover:bg-zinc-950 hover:text-white"
-                disabled={disabled || !onFeedback}
-                onClick={() => submitSelectionFeedback("revise")}
-              >
-                不满意
-              </button>
-              <button
-                type="button"
-                className="rounded-full border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-800 shadow-sm hover:border-emerald-700 hover:bg-emerald-700 hover:text-white"
-                disabled={disabled || !onFeedback}
-                onClick={() => submitSelectionFeedback("liked")}
-              >
-                喜欢
-              </button>
-              <button
-                type="button"
-                className="rounded-full border border-sky-300 bg-white px-3 py-1.5 text-xs font-medium text-sky-800 shadow-sm hover:border-sky-700 hover:bg-sky-700 hover:text-white"
-                disabled={disabled || !onFeedback}
-                onClick={() => submitSelectionFeedback("rewrite")}
-              >
-                需要改写
-              </button>
-            </div>
-          </section>
-        ) : null}
-
-        {selectionFeedbacks.length ? (
-          <section className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold">已记录反馈标签</div>
-              <div className="text-xs text-muted-foreground">右上角 x 可撤回</div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {selectionFeedbacks.map((feedback) => (
-                <FeedbackTag
-                  key={feedback.id}
-                  feedback={feedback}
-                  disabled={disabled}
-                  onDelete={onDeleteFeedback}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <section className="rounded-xl border bg-zinc-50 p-3">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <div className="text-sm font-semibold">Auto Eval</div>
-            <Badge variant="outline" className="bg-white">backend rubric</Badge>
-          </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            <Score label="基础质量" source="Auto Eval" value={draft.breakdown.quality} />
-            <Score label="任务匹配" source="Auto Eval" value={draft.breakdown.fit} />
-            <Score label="风格偏好" source="Auto Eval" value={draft.breakdown.style} />
-            <Score label="风险扣分" source="Auto Eval" value={draft.breakdown.risk} danger />
-          </div>
-        </section>
-
-        <div className="flex flex-col gap-3 border-t pt-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-1 text-sm">
-            <p>{draft.rationale}</p>
-            <p className="flex items-center gap-2 text-muted-foreground">
-              <AlertTriangle className="size-4 text-amber-600" />
-              {draft.risk}
-            </p>
-          </div>
-          <p className="max-w-sm rounded-lg border bg-zinc-50 px-3 py-2 text-xs text-muted-foreground">
-            人工动作只保留“选中文本 + 打标签”。系统会自动归因并生成规则草稿。
-          </p>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function FeedbackTag({
-  feedback,
-  disabled,
-  onDelete,
-}: {
-  feedback: HumanFeedbackRecord;
-  disabled?: boolean;
-  onDelete?: (feedbackId: string) => Promise<void> | void;
-}) {
-  const isPositive = feedback.businessReason === "正向样本";
-
-  return (
-    <div
-      className={cn(
-        "relative max-w-sm rounded-xl border bg-white px-3 py-2 pr-8 shadow-sm",
-        isPositive ? "border-emerald-200" : "border-amber-200",
-      )}
-    >
-      <button
-        type="button"
-        className="absolute right-1 top-1 rounded-full p-1 text-muted-foreground hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40"
-        disabled={disabled || !onDelete}
-        onClick={() => onDelete?.(feedback.id)}
-        aria-label="删除反馈标签"
-      >
-        <X className="size-3.5" />
-      </button>
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={isPositive ? "secondary" : "outline"}>
-          {feedback.businessReason ?? "局部反馈"}
-        </Badge>
-        <Badge variant="muted">
-          {(feedback.status ?? "unprocessed") === "compiled" ? "已编译" : "未处理"}
-        </Badge>
-        {feedback.confidence ? (
-          <span className="text-[11px] text-muted-foreground">{feedback.confidence}</span>
-        ) : null}
-      </div>
-      {feedback.quote ? (
-        <p className="mt-1 line-clamp-2 text-xs text-zinc-700">{feedback.quote}</p>
-      ) : null}
-      {feedback.issue ? (
-        <p className="mt-1 text-[11px] text-muted-foreground">{feedback.issue}</p>
-      ) : null}
-    </div>
   );
 }
 

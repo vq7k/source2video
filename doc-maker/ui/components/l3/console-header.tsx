@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,17 +31,11 @@ export function ConsoleHeader({
               {backLabel}
             </Link>
           </Button>
-          <Badge variant="muted" className="font-mono">
-            L3
-          </Badge>
-          <span className="text-xs text-muted-foreground">节点层</span>
+          <Badge variant="muted">节点诊断</Badge>
+          <span className="text-xs text-muted-foreground">单节点产物</span>
         </div>
         <div className="flex items-center gap-2">
           {extraRight}
-          <Button variant="outline" size="sm">
-            <RefreshCw className="mr-1 h-3 w-3" />
-            重跑
-          </Button>
         </div>
       </div>
       <h1 className="text-lg font-semibold">{title}</h1>

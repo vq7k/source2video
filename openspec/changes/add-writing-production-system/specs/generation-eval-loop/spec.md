@@ -5,7 +5,7 @@ The system SHALL generate multiple candidate drafts for a Writing Job rather tha
 
 #### Scenario: User confirms Precheck
 - **WHEN** the user starts generation after Precheck
-- **THEN** the system creates multiple candidate drafts tied to the same Content Brief and Writing Skill Candidate
+- **THEN** the system creates multiple candidate drafts tied to the same Content Brief and Writing Rules Candidate
 
 ### Requirement: Candidates are auto-evaluated
 The system SHALL score each candidate draft with the current Eval Profile and show score breakdowns.
@@ -13,6 +13,12 @@ The system SHALL score each candidate draft with the current Eval Profile and sh
 #### Scenario: Candidate generation completes
 - **WHEN** draft candidates are available
 - **THEN** each candidate shows total score, rule-level scores, and short rationale
+
+#### Scenario: Core eval scores candidates
+- **WHEN** candidate generation completes
+- **THEN** the system evaluates candidates through the workflow-core eval runner
+- **AND** stores candidate attribution with dimension, source, evidence, score, and pass/warning/blocked status
+- **AND** maps the core eval result back into the Writing Job score breakdown without changing L1 UI concepts
 
 ### Requirement: Selection feedback feeds next iteration
 The system MUST allow the user to select text in a candidate and attach lightweight review feedback that can update the next round.
@@ -48,3 +54,34 @@ The system SHALL flag over-imitation and factual drift risks during candidate ev
 #### Scenario: Candidate resembles reference too closely
 - **WHEN** eval detects high similarity to a reference article
 - **THEN** the candidate is marked with similarity risk and cannot be recommended without warning
+
+### Requirement: LLM-like steps emit trace records
+The system SHALL emit a unified LLM call trace record for every LLM-like step before Langfuse is connected.
+
+#### Scenario: Runtime runs a generation loop step
+- **WHEN** scope extraction, precheck normalization, candidate generation, feedback reasoning, or rule patch compilation runs
+- **THEN** the system records provider, model, prompt version, input refs, output artifact, eval result, run id, node run id, and node type through TraceSink
+- **AND** the record is available from the local run record until a Langfuse sink is attached
+
+### Requirement: LLM runtime can be configured independently
+The system SHALL provide a runtime settings surface for model provider configuration without coupling it to the writing job form.
+
+#### Scenario: User tests a model runtime
+- **WHEN** the user opens `/settings/llm` and runs Test Call for mock, Ollama, or OpenAI-compatible runtime
+- **THEN** the system records a TraceSink test call with provider, model, prompt version, output artifact, eval result, and status
+- **AND** API Key values are read only from environment variables, not saved through the UI
+
+#### Scenario: User loads available runtime models
+- **WHEN** the user loads models from `/settings/llm`
+- **THEN** the system lists models from Ollama `/api/tags` or OpenAI-compatible `/models`
+- **AND** the user can select a listed model while still being allowed to type a custom model name
+
+#### Scenario: User generates Writing Rule Scope with a runtime model
+- **WHEN** the user generates Writing Rule Scope from L1
+- **THEN** the result shows provider, model, prompt version, trace id, and latency from the recorded LLM call
+
+#### Scenario: Runtime call is in progress
+- **WHEN** Scope extraction or Precheck normalization is running
+- **THEN** L1 shows the active node, expected wait time, and a stop-waiting action
+- **AND** stopping the wait does not delete already persisted historical run records
+- **AND** failed or fallback traces are visibly marked in the Framework Viewer

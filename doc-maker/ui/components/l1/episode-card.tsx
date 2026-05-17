@@ -7,9 +7,14 @@ import { FileText, FolderOpen, ClipboardCheck, RefreshCw, ArrowRight, ChevronDow
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { StatusBadge } from "./status-badge";
 import { ProgressPipeline } from "./progress-pipeline";
-import type { Episode } from "@/lib/types";
+import type { Episode, NodeName } from "@/lib/types";
 
 interface Props {
   episode: Episode;
@@ -20,10 +25,9 @@ interface Props {
 function TechnicalDetail({ detail }: { detail: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-1">
-      <button
+    <Collapsible open={open} onOpenChange={setOpen} className="mt-1">
+      <CollapsibleTrigger
         type="button"
-        onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
       >
         {open ? (
@@ -32,14 +36,26 @@ function TechnicalDetail({ detail }: { detail: string }) {
           <ChevronRight className="h-3 w-3" />
         )}
         技术细节
-      </button>
-      {open && (
+      </CollapsibleTrigger>
+      <CollapsibleContent>
         <p className="mt-1 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground">
           {detail}
         </p>
-      )}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
+}
+
+function nodeDiagnosticHref(node?: NodeName, artifactId?: string) {
+  if (!node) {
+    return "/hub";
+  }
+
+  if (node === "shot" && artifactId) {
+    return `/node/shot/${encodeURIComponent(artifactId)}`;
+  }
+
+  return `/node/${node}${artifactId ? `?artifact=${encodeURIComponent(artifactId)}` : ""}`;
 }
 
 function hasCompleteArtifacts(episode: Episode): episode is Episode & {
@@ -126,7 +142,7 @@ export function EpisodeCard({ episode, onAccept, onRerun }: Props) {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm">
               <Link
-                href={`/node/${episode.warn_node}${episode.warn_artifact_id ? `?artifact=${episode.warn_artifact_id}` : ""}`}
+                href={nodeDiagnosticHref(episode.warn_node, episode.warn_artifact_id)}
               >
                 <ArrowRight className="mr-1.5 h-3 w-3" />
                 {episode.warn_node === "qa" && "QA 诊断入口"}
@@ -182,7 +198,7 @@ export function EpisodeCard({ episode, onAccept, onRerun }: Props) {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm">
               <Link
-                href={`/node/${episode.failed_node}${episode.failed_artifact_id ? `?artifact=${episode.failed_artifact_id}` : ""}`}
+                href={nodeDiagnosticHref(episode.failed_node, episode.failed_artifact_id)}
               >
                 <ArrowRight className="mr-1.5 h-3 w-3" />
                 {isBoundedBudgetFailure && "打开诊断包"}

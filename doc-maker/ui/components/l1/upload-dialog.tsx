@@ -49,6 +49,10 @@ interface UploadFailure {
   detail: string;
 }
 
+interface UploadDialogProps {
+  onEpisodeCreate?: (episode: Episode) => void;
+}
+
 const UPLOAD_FAILURES: Record<Exclude<UploadScenario, "success">, UploadFailure> = {
   lint_failure: {
     title: "素材检查未通过",
@@ -73,7 +77,7 @@ const DEFAULT_SELECTED_FILE: SelectedFile = {
   size: "2.0MB",
 };
 
-export function UploadDialog() {
+export function UploadDialog({ onEpisodeCreate }: UploadDialogProps) {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<Phase>("form");
@@ -154,9 +158,7 @@ export function UploadDialog() {
               eta: "5:00",
             };
 
-            window.dispatchEvent(
-              new CustomEvent<Episode>("episode:create", { detail: newEp }),
-            );
+            onEpisodeCreate?.(newEp);
 
             schedule(() => {
               setOpen(false);
@@ -184,12 +186,12 @@ export function UploadDialog() {
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>上传素材并生成 Episode</DialogTitle>
+          <DialogTitle>上传素材并创建任务</DialogTitle>
           <DialogDescription>
             素材会先检查、登记版本、提交到 git，再启动生成流水线；UI 不保存私有状态。
           </DialogDescription>
           <p className="rounded border border-amber-300/40 bg-amber-50/40 px-2 py-1 text-xs text-amber-900 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
-            原型期：当前只模拟检查、登记、提交和启动结果；失败不会向列表插入 running Episode。
+            当前只做本地演示：检查、登记、提交和启动结果不会写入真实生产队列。
           </p>
         </DialogHeader>
 
@@ -248,7 +250,7 @@ export function UploadDialog() {
               )}
             </div>
             <div className="grid gap-2">
-              <Label>原型测试场景</Label>
+              <Label>演示场景</Label>
               <Select
                 value={scenario}
                 onValueChange={(value) => setScenario(value as UploadScenario)}

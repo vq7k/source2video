@@ -32,11 +32,12 @@ export function RerunPanel({
 }: Props) {
   const [version, setVersion] = useState(defaultVersion ?? materialVersions[0]);
   const [caseId, setCaseId] = useState(defaultCase ?? caseOptions[0]);
-  const [previewed, setPreviewed] = useState(false);
+  const [previewMode, setPreviewMode] = useState<"rerun" | "compare" | null>(null);
 
-  const handleRerun = () => {
-    setPreviewed(true);
-  };
+  const command =
+    previewMode === "compare"
+      ? `s2v compare ${node} --case ${caseId} --materials ${version}`
+      : `s2v run ${node} --case ${caseId} --materials ${version}`;
 
   return (
     <Card className="p-5">
@@ -77,20 +78,22 @@ export function RerunPanel({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button onClick={handleRerun}>
+        <Button onClick={() => setPreviewMode("rerun")}>
           <RefreshCw className="mr-1.5 h-3 w-3" />
           预览重跑动作
         </Button>
-        <Button variant="outline" onClick={handleRerun}>
+        <Button variant="outline" onClick={() => setPreviewMode("compare")}>
           <Scale className="mr-1.5 h-3 w-3" />
           预览对比动作
         </Button>
       </div>
-      {previewed && (
+      {previewMode && (
         <div className="mt-3 rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-          <p>当前仅预览 CLI/git-backed action，不会修改产品状态。</p>
+          <p>
+            当前仅预览 {previewMode === "compare" ? "对比" : "重跑"} CLI/git-backed action，不会修改产品状态。
+          </p>
           <code className="mt-2 block font-mono text-[11px]">
-            {`s2v run ${node} --case ${caseId} --materials ${version}`}
+            {command}
           </code>
         </div>
       )}

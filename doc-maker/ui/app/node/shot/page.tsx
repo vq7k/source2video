@@ -21,10 +21,8 @@ export default function ShotNodeOverviewPage() {
                 总览控制台
               </Link>
             </Button>
-            <Badge variant="muted" className="font-mono">
-              L3
-            </Badge>
-            <span className="text-xs text-muted-foreground">节点层</span>
+            <Badge variant="muted">节点诊断</Badge>
+            <span className="text-xs text-muted-foreground">Shot 总览</span>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" disabled>
@@ -109,7 +107,7 @@ export default function ShotNodeOverviewPage() {
         </Card>
 
         <p className="text-xs text-muted-foreground">
-          其它 Episode 的 shot 列表（mock 阶段未填充）将来通过{" "}
+          其它任务的 shot 列表将来通过{" "}
           <code className="rounded bg-muted px-1 font-mono">traces/artifacts/?node=shot</code>{" "}
           扫描得到。
         </p>

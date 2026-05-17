@@ -22,12 +22,14 @@
 | 06 | [ui-spec.md](./06-ui-spec.md) | L2/L3 诊断层 console UI 规格 |
 | 07 | [acceptance.md](./07-acceptance.md) | 业务原型验收 + framework ToyNode 历史基线 |
 | 08 | [tech-stack.md](./08-tech-stack.md) | 技术选型 + pyproject + .env |
+| 框架 | [framework-core.md](./framework-core.md) | 可迁移框架层实现设计：workflow-core / Langfuse / eval / adapter |
 
 ## 参考（按需查）
 
-- [ADRs/](./ADRs/) — ADR-001~028（业务侧 + 框架内核决策）+ 仓级 ADR-023/024 stub
+- [ADRs/](./ADRs/) — ADR-001~029（业务侧 + 框架内核决策）+ 仓级 ADR-023/024 stub
 - [reference/cli.md](./reference/cli.md) — CLI 速查
 - [reference/schemas.md](./reference/schemas.md) — 数据契约集中（Pydantic schema）
+- [reference/langfuse.md](./reference/langfuse.md) — Langfuse env、Trace/Scores/Human Feedback/Dataset 映射与验证
 
 ## Future（当前不作为主线）
 

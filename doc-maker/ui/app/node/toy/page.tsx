@@ -105,7 +105,7 @@ export default function ToyConsolePage() {
       />
 
       <footer className="pt-4 text-center text-xs text-muted-foreground">
-        L3 立场：作者本人的活体地图（ADR-020）· per-node 不聚合（ADR-010 / 不变量 #8）· 6 件套永远同一页（06-ui-spec §0.1）
+        节点诊断只看当前节点产物、物料、决策迹、反馈和重跑记录，不做跨节点聚合。
       </footer>
     </main>
   );

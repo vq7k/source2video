@@ -40,3 +40,4 @@ traces/
 reports/
 .cache/
 doc-maker/ui/.writing-runs/
+doc-maker/ui/.doc-maker-runtime/

@@ -174,7 +174,7 @@ export function FeedbackDialog({ location, artifactId, trigger }: Props) {
           </div>
         ) : (
           <div className="space-y-3 py-4 text-sm text-muted-foreground">
-            <p>将创建一条 git-backed feedback 记录；当前原型不写文件、不改变 Episode 状态。</p>
+            <p>将创建一条反馈记录；当前页面只预览记录内容，不改变任务状态。</p>
             <pre className="overflow-x-auto rounded-md border bg-muted/30 p-3 font-mono text-[11px]">
               {JSON.stringify({ artifactId, location, verdict, cause, severity, issue, expected }, null, 2)}
             </pre>

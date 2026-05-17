@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "doc-maker · 三层 UI 原型",
-  description: "L1 业务控制台 / L2 总览控制台 / L3 节点控制台",
+  title: "doc-marker · 文本生产工作台",
+  description: "输入、检查、候选评审和定稿导出的文本生产闭环",
 };
 
 export default function RootLayout({

@@ -77,9 +77,7 @@ export default async function ArtifactViewerPage({ params }: PageProps) {
                 返回业务控制台
               </Link>
             </Button>
-            <Badge variant="muted" className="font-mono">
-              L1 出口
-            </Badge>
+            <Badge variant="muted">产物出口</Badge>
             <span className="text-xs text-muted-foreground">
               业务使用者视图
             </span>

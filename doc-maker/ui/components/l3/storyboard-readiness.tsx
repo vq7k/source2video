@@ -14,7 +14,7 @@ export function StoryboardReadiness({ scope, artifactParam }: Props) {
           STORYBOARD
         </Badge>
         <span>
-          {scope} 使用内置 mock artifact；真实 artifact resolver 尚未接入。
+          {scope} 当前使用内置示例产物；真实产物解析器尚未接入。
         </span>
         {artifactParam && (
           <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">

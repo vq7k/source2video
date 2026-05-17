@@ -1,3 +1,9 @@
+import type {
+  FrameworkNodeRunRecord,
+  LLMCallTraceRecord,
+} from "@/lib/framework-run-types";
+import type { CoreEvalRun } from "@/lib/workflow-core/eval";
+
 export const RULE_PATCH_DRAFT_LIMIT = 5;
 export const RULE_SNAPSHOT_RULE_LIMIT = 10;
 
@@ -5,7 +11,8 @@ export type WritingRunStatus =
   | "precheck_ready"
   | "candidate_ready"
   | "feedback_recorded"
-  | "rule_patch_ready";
+  | "rule_patch_ready"
+  | "finalized";
 
 export type WritingJobSpec = {
   title: string;
@@ -15,7 +22,7 @@ export type WritingJobSpec = {
   reviewPreference: string;
 };
 
-export type WritingSkillSnapshot = {
+export type SkillPackageSnapshot = {
   id: string;
   category: string;
   version: string;
@@ -46,12 +53,48 @@ export type TraceStep = {
   output: string;
 };
 
+export type WritingRuleScopeKind = "structure" | "tone" | "prohibition" | "checklist";
+
+export type WritingRuleScopeItem = {
+  id: string;
+  kind: WritingRuleScopeKind;
+  text: string;
+  sourceNote: string;
+  confidence: "low" | "medium" | "high";
+};
+
+export type RuleScopeExtractionEval = {
+  id: string;
+  status: "complete";
+  score: number;
+  checks: Array<{
+    label: string;
+    status: "pass" | "warning" | "blocked";
+    evidence: string;
+    guidance: string;
+  }>;
+};
+
+export type WritingRuleScopeRecord = {
+  id: string;
+  createdAt: string;
+  status: "draft" | "confirmed";
+  source: "baseline" | "reference_paste" | "mixed";
+  quickIntakeDigest: string;
+  referencePaste?: string;
+  items: WritingRuleScopeItem[];
+  eval: RuleScopeExtractionEval;
+  llmTrace: LLMCallTraceRecord;
+  warning: string;
+};
+
 export type PrecheckRun = {
   id: string;
   status: "ready" | "confirmed";
+  warning?: string;
   contentBrief: string;
   groundingBrief: string;
-  writingRuleCandidate: string[];
+  writingRulesCandidate: string[];
   riskChecks: Array<{
     label: string;
     level: "low" | "medium" | "high";
@@ -86,6 +129,7 @@ export type EvalRun = {
   round?: number;
   status: "complete";
   profileVersion: string;
+  coreEval?: CoreEvalRun;
   candidateResults: Array<{
     candidateId: string;
     total: number;
@@ -148,7 +192,7 @@ export type HumanFeedbackInput = {
   confidence?: HumanFeedbackRecord["confidence"];
 };
 
-export type SkillCandidateRecord = {
+export type WritingRulesCandidateRecord = {
   id: string;
   status: "candidate";
   version: string;
@@ -192,10 +236,14 @@ export type WritingRunRecord = {
   createdAt: string;
   updatedAt: string;
   status: WritingRunStatus;
+  finalizedCandidateId?: string;
+  finalizedAt?: string;
   round: number;
   storePath: string;
   quickIntake: string;
-  skill: WritingSkillSnapshot;
+  referencePaste?: string;
+  ruleScope?: WritingRuleScopeRecord | null;
+  skillPackage: SkillPackageSnapshot;
   outputProfile: OutputProfileSnapshot;
   outputContract?: TextOutputContract;
   jobSpec: WritingJobSpec;
@@ -206,16 +254,26 @@ export type WritingRunRecord = {
   rulePatches: RulePatchRecord[];
   ruleSnapshots: RuleSnapshotRecord[];
   generationRuns: GenerationRunRecord[];
-  skillCandidate: SkillCandidateRecord;
+  rulesCandidate: WritingRulesCandidateRecord;
+  frameworkRuns?: FrameworkNodeRunRecord[];
+  llmTraces?: LLMCallTraceRecord[];
   trace: TraceStep[];
 };
 
 export type CreateWritingRunInput = {
   quickIntake: string;
-  skill: WritingSkillSnapshot;
+  referencePaste?: string;
+  ruleScope?: WritingRuleScopeRecord | null;
+  skillPackage: SkillPackageSnapshot;
   outputProfile: OutputProfileSnapshot;
   outputContract?: TextOutputContract;
   jobSpec: WritingJobSpec;
+};
+
+export type DeriveWritingRuleScopeInput = {
+  quickIntake: string;
+  referencePaste?: string;
+  runId?: string;
 };
 
 export type CompileRulePatchInput = {
@@ -225,4 +283,8 @@ export type CompileRulePatchInput = {
 export type RunGenerationBatchInput = {
   patchIds?: string[];
   candidateCount?: number;
+};
+
+export type FinalizeWritingRunInput = {
+  candidateId: string;
 };

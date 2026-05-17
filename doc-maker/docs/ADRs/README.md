@@ -61,6 +61,12 @@
 |---|---|---|
 | [ADR-028](028.md) | 当前主线从讲解文档包抽象上移为 Writing Production | 采纳 |
 
+### v6（框架层实现边界，2026-05-16）
+
+| ID | 标题 | 状态 |
+|---|---|---|
+| [ADR-029](029.md) | Framework Core 可迁移内核与 Langfuse Lens 边界 | 采纳 |
+
 ### 仓级（转发 stub）
 
 | ID | 标题 | 真正位置 |
@@ -129,6 +135,13 @@ ADR-028 Writing Production 成为当前主线
    ├─→ ADR-027 业务产品原型继续成立，讲解文档包保留为默认 Output Profile
    ├─→ ADR-025 L1/L2/L3 解耦继续成立，L1 单元改为 Writing Job
    └─→ ADR-009 评审治理重新成为产品核心闭环
+
+ADR-029 Framework Core 可迁移内核与 Langfuse Lens 边界
+   ├─→ ADR-007 Langfuse 早接
+   ├─→ ADR-010 Per-node UI 禁止聚合
+   ├─→ ADR-012 Decision Trace + Eval Attribution
+   ├─→ ADR-025 L1/L2/L3 解耦
+   └─→ ADR-028 TraceSink 不自研观测平台
 ```
 
 **仓级 ADR（结构性，见 [`../../../docs/ADRs/`](../../../docs/ADRs/)）**：

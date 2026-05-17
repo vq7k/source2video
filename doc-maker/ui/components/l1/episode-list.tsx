@@ -118,10 +118,8 @@ export function EpisodeList({ initial }: Props) {
     );
   };
 
-  /** 暴露 prepend 给上传 dialog 用 */
   return (
     <div className="space-y-3" data-list-root>
-      <EpisodeListHandle setItems={setItems} />
       {items.map((ep) => (
         <EpisodeCard
           key={ep.id}
@@ -140,22 +138,4 @@ function hasCompleteArtifacts(episode: Episode) {
       episode.artifacts.shots &&
       episode.artifacts.qa_report,
   );
-}
-
-// 把 setItems 通过 window event 暴露给 UploadDialog（避免上层提状态成本）
-function EpisodeListHandle({
-  setItems,
-}: {
-  setItems: React.Dispatch<React.SetStateAction<Episode[]>>;
-}) {
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<Episode>).detail;
-      if (!detail) return;
-      setItems((prev) => [detail, ...prev]);
-    };
-    window.addEventListener("episode:create", handler);
-    return () => window.removeEventListener("episode:create", handler);
-  }, [setItems]);
-  return null;
 }
