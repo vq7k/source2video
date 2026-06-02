@@ -634,7 +634,7 @@ export default function LightweightWritingWorkbenchPage() {
             title="查看完整工作区"
             aria-label="打开完整工作区"
           >
-            <Link href="/">全貌</Link>
+            <Link href="/overview">全貌</Link>
           </Button>
           {activeTopic ? (
             <Button
