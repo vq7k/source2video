@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { confirmWritingRunPrecheck } from "@/lib/writing-runtime";
+import { confirmWritingRunPrecheck } from "@doc-maker/writing-domain/runtime";
 
 export const runtime = "nodejs";
 

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { testStructuredJSONRuntime } from "@/lib/llm/providers/structured-json";
+import { testStructuredJSONRuntime } from "@doc-maker/writing-domain/llm/providers/structured-json";
 import {
   readLLMRuntimeSettings,
   toLLMRuntimeSettingsView,
   type LLMRuntimeSettings,
-} from "@/lib/llm/settings";
-import { getTraceSink } from "@/lib/trace-sink";
+} from "@doc-maker/writing-domain/llm/settings";
+import { getTraceSink } from "@doc-maker/observability/trace-sink";
 
 export const runtime = "nodejs";
 

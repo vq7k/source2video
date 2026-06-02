@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { deleteHumanFeedback, recordHumanFeedback } from "@/lib/writing-runtime";
-import type { HumanFeedbackInput } from "@/lib/writing-run-types";
+import { deleteHumanFeedback, recordHumanFeedback } from "@doc-maker/writing-domain/runtime";
+import type { HumanFeedbackInput } from "@doc-maker/writing-domain/types";
 
 export const runtime = "nodejs";
 

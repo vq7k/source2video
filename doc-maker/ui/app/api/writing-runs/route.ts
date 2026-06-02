@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { createWritingRun, listWritingRuns } from "@/lib/writing-runtime";
-import type { CreateWritingRunInput } from "@/lib/writing-run-types";
+import { createWritingRun, listWritingRuns } from "@doc-maker/writing-domain/runtime";
+import type { CreateWritingRunInput } from "@doc-maker/writing-domain/types";
 
 export const runtime = "nodejs";
 

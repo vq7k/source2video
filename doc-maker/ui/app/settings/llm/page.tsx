@@ -3,7 +3,7 @@ import { ArrowLeft, GitBranch, Settings2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { readLLMRuntimeSettings, toLLMRuntimeSettingsView } from "@/lib/llm/settings";
+import { readLLMRuntimeSettings, toLLMRuntimeSettingsView } from "@doc-maker/writing-domain/llm/settings";
 import { LLMSettingsForm } from "./llm-settings-form";
 
 export default async function LLMSettingsPage() {

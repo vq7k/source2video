@@ -1,0 +1,48 @@
+# source2video —— doc-maker Next.js 单容器，复用 from-fullstack-to-ai 的 caddy + 网络
+#
+# 部署前置:
+# - 服务器已存在 external network: infra_ftai-net
+# - ftai-caddy 已加入 infra_ftai-net
+# - ftai-caddy 增加 s2v.x-lin7.com -> source2video:3000 的 site block
+# - /opt/source2video/.env 已写入生产 LLM / Langfuse 配置
+
+services:
+  source2video:
+    image: ${REGISTRY_HOST:-crpi-hych6zm27jhqndgw.cn-hongkong.personal.cr.aliyuncs.com}/qv7k/source2video:${IMAGE_TAG:-latest}
+    container_name: source2video
+    restart: unless-stopped
+    expose:
+      - "3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      DOC_MAKER_RUN_STORE_DIR: /data/writing-runs
+      DOC_MAKER_RULE_PACKAGE_STORE_DIR: /data/rule-packages
+      DOC_MAKER_LLM_PROVIDER: ${DOC_MAKER_LLM_PROVIDER:-openai-compatible}
+      DOC_MAKER_LLM_BASE_URL: ${DOC_MAKER_LLM_BASE_URL:-https://api.deepseek.com}
+      DOC_MAKER_LLM_MODEL: ${DOC_MAKER_LLM_MODEL:-deepseek-chat}
+    volumes:
+      - ./data/writing-runs:/data/writing-runs
+      - ./data/rule-packages:/data/rule-packages
+      - ./data/runtime:/app/ui/.doc-maker-runtime
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - ftai-net
+
+networks:
+  ftai-net:
+    external: true
+    name: infra_ftai-net

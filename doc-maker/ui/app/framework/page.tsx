@@ -17,16 +17,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { FrameworkNodeRunRecord, LLMCallTraceRecord } from "@/lib/framework-run-types";
-import { getLangfuseSettings, langfuseTraceUrl } from "@/lib/observability/langfuse";
-import { readLLMRuntimeSettings, toLLMRuntimeSettingsView } from "@/lib/llm/settings";
-import { listWritingRuns } from "@/lib/writing-runtime";
+import type { FrameworkNodeRunRecord, LLMCallTraceRecord } from "@doc-maker/writing-domain/framework-run-types";
+import { getLangfuseSettings, langfuseTraceUrl } from "@doc-maker/observability/langfuse";
+import { readLLMRuntimeSettings, toLLMRuntimeSettingsView } from "@doc-maker/writing-domain/llm/settings";
+import { listWritingRuns } from "@doc-maker/writing-domain/runtime";
 import type {
   CandidateRecord,
   HumanFeedbackRecord,
   RulePatchRecord,
   WritingRunRecord,
-} from "@/lib/writing-run-types";
+} from "@doc-maker/writing-domain/types";
 import { cn } from "@/lib/utils";
 
 type FrameworkSearchParams = {
@@ -124,9 +124,11 @@ function nodeTitle(nodeType: string) {
     case "precheck_normalization":
       return "清洗生成契约";
     case "candidate_generation":
-      return "生成候选批次";
+      return "生成候选正文";
+    case "candidate_batch":
+      return "候选批次汇总";
     case "candidate_eval":
-      return "候选自动评分";
+      return "候选评估";
     case "feedback_reasoning":
       return "分析人工反馈";
     case "feedback_compilation":
@@ -145,9 +147,11 @@ function nodeWhy(nodeType: string) {
     case "precheck_normalization":
       return "把输入契约、输出契约和规则范围清洗成可生成、可评分的契约。";
     case "candidate_generation":
-      return "按当前规则快照生成候选文本，并把自动评分写入观测层。";
+      return "按当前规则快照生成一个候选文本；本节点不评分。";
+    case "candidate_batch":
+      return "汇总同一轮独立候选路径和评估结果，不直接调用模型。";
     case "candidate_eval":
-      return "按评分口径给候选评分，保留归因。";
+      return "独立读取候选正文和契约，按评分口径输出分数和归因。";
     case "feedback_reasoning":
       return "把人工轻反馈写入评分和反馈元数据，供规则草稿使用。";
     case "feedback_compilation":
@@ -166,7 +170,9 @@ function callSummary(call: LLMCallTraceRecord) {
     case "precheck_normalization":
       return "输入契约 + 输出契约 -> 内容摘要 / 规则 / 风险";
     case "candidate_generation":
-      return "规则快照 -> 候选批次 + 评分";
+      return "规则快照 -> 单个候选正文";
+    case "candidate_batch":
+      return "候选路径 -> 批次汇总";
     case "candidate_eval":
       return "评分口径 -> 候选分数";
     case "feedback_reasoning":
@@ -201,6 +207,7 @@ function nodeStage(nodeType: string) {
     case "precheck_normalization":
       return "检查";
     case "candidate_generation":
+    case "candidate_batch":
     case "candidate_eval":
       return "生成";
     case "feedback_reasoning":
@@ -838,6 +845,11 @@ function CandidatePanel({
         .sort((left, right) => Number(right.id === selectedCandidateId) - Number(left.id === selectedCandidateId))
     : candidates;
   const coreEval = run.evalRun?.round === round ? run.evalRun.coreEval : null;
+  const evalByCandidate = new Map(
+    run.evalRun?.round === round
+      ? run.evalRun.candidateResults.map((result) => [result.candidateId, result] as const)
+      : [],
+  );
 
   return (
     <section className="rounded-xl border bg-zinc-50 p-4">
@@ -847,7 +859,12 @@ function CandidatePanel({
       </div>
       <div className="mt-3 grid gap-3">
         {visibleCandidates.map((candidate) => (
-          <CandidateCard key={candidate.id} candidate={candidate} selected={candidate.id === selectedCandidateId} />
+          <CandidateCard
+            key={candidate.id}
+            candidate={candidate}
+            evalResult={evalByCandidate.get(candidate.id)}
+            selected={candidate.id === selectedCandidateId}
+          />
         ))}
         {!candidates.length ? <EmptyBlock text="这个节点还没有候选文本。" /> : null}
       </div>
@@ -864,7 +881,18 @@ function CandidatePanel({
   );
 }
 
-function CandidateCard({ candidate, selected = false }: { candidate: CandidateRecord; selected?: boolean }) {
+function CandidateCard({
+  candidate,
+  evalResult,
+  selected = false,
+}: {
+  candidate: CandidateRecord;
+  evalResult?: NonNullable<WritingRunRecord["evalRun"]>["candidateResults"][number];
+  selected?: boolean;
+}) {
+  const scoreFor = (dimension: string) =>
+    evalResult?.attribution.find((item) => item.dimension === dimension)?.score;
+
   return (
     <div
       className={cn(
@@ -879,15 +907,15 @@ function CandidateCard({ candidate, selected = false }: { candidate: CandidateRe
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {selected ? <Badge variant="secondary">当前候选</Badge> : null}
-          <Badge variant="outline">score {candidate.total}</Badge>
+          <Badge variant="outline">{evalResult ? `eval ${evalResult.total}` : "待评估"}</Badge>
         </div>
       </div>
       <p className="mt-2 leading-6 text-zinc-800">{candidate.summary}</p>
       <div className="mt-2 grid gap-2 md:grid-cols-4">
-        <Info label="基础质量" value={candidate.breakdown.quality.toString()} />
-        <Info label="任务匹配" value={candidate.breakdown.fit.toString()} />
-        <Info label="风格偏好" value={candidate.breakdown.style.toString()} />
-        <Info label="风险扣分" value={candidate.breakdown.risk.toString()} />
+        <Info label="基础质量" value={scoreFor("基础质量")?.toString() ?? "待评估"} />
+        <Info label="任务匹配" value={scoreFor("任务匹配")?.toString() ?? "待评估"} />
+        <Info label="风格偏好" value={scoreFor("风格偏好")?.toString() ?? "待评估"} />
+        <Info label="风险扣分" value={scoreFor("风险扣分")?.toString() ?? "待评估"} />
       </div>
     </div>
   );

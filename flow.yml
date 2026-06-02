@@ -1,0 +1,114 @@
+# 云效流水线 —— source2video / doc-maker Docker 部署
+#
+# 前置:
+# - Codeup 代码源服务连接沿用 xrhfc959mqp5nqye
+# - ACR 个人版服务连接沿用 qej3ipnct3c44kni
+# - 主机组沿用 Ygtt0gTV53OffUF7
+# - 服务器已存在 /opt/source2video/.env，至少包含 DOC_MAKER_LLM_API_KEY
+# - ftai-caddy 已配置 s2v.x-lin7.com -> source2video:3000
+
+sources:
+  source2video_repo:
+    type: codeup
+    name: source2video
+    endpoint: https://codeup.aliyun.com/62cd1e4411fc0f0c9e2b51d0/agent/source2video.git
+    branch: main
+    triggerEvents:
+      - push
+    certificate:
+      type: serviceConnection
+      serviceConnection: xrhfc959mqp5nqye
+
+defaultWorkspace: source2video_repo
+
+stages:
+  image_stage:
+    name: "镜像构建"
+    jobs:
+      image_job:
+        name: "构建并推送 Docker 镜像"
+        runsOn:
+          group: public/cn-hongkong
+          container: build-steps-public-registry.cn-hongkong.cr.aliyuncs.com/build-steps/alinux3:latest
+        steps:
+          docker_build_step:
+            name: "ACR Docker build + push"
+            step: DockerBuildPushACR
+            with:
+              serviceConnection: qej3ipnct3c44kni
+              region: cn-hongkong
+              artifact: source2video_image
+              dockerRegistry: crpi-hych6zm27jhqndgw.cn-hongkong.personal.cr.aliyuncs.com/qv7k/source2video
+              dockerTag: ${CI_COMMIT_ID}
+              dockerfilePath: Dockerfile
+              cacheType: remote
+          package_deploy_step:
+            name: "打包部署文件"
+            step: Command
+            with:
+              run: |
+                set -eu
+                tar czf deploy.tgz docker-compose.yml
+                ls -lh deploy.tgz
+          upload_deploy_step:
+            name: "上传部署包"
+            step: ArtifactUpload
+            with:
+              uploadType: flowPublic
+              artifact: deploy_bundle
+              filePath:
+                - deploy.tgz
+
+  deploy_stage:
+    name: "部署"
+    jobs:
+      vm_deploy_job:
+        name: "Docker Compose 部署到轻量服务器"
+        component: VMDeploy
+        with:
+          artifact: $[stages.image_stage.image_job.upload_deploy_step.artifacts.deploy_bundle]
+          downloadArtifact: true
+          machineGroup: "Ygtt0gTV53OffUF7"
+          artifactDownloadPath: "/tmp/source2video-deploy.tgz"
+          executeUser: "root"
+          run: |
+            set -eu
+
+            APP=/opt/source2video
+            REGISTRY_HOST=crpi-hych6zm27jhqndgw.cn-hongkong.personal.cr.aliyuncs.com
+            IMAGE_TAG="${CI_COMMIT_ID}"
+
+            mkdir -p "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime"
+            tar xzf /tmp/source2video-deploy.tgz -C "$APP"
+            rm -f /tmp/source2video-deploy.tgz
+            cd "$APP"
+
+            if [ ! -f .env ]; then
+              echo "missing $APP/.env; create it with DOC_MAKER_LLM_API_KEY before deploying" >&2
+              exit 1
+            fi
+
+            if [ -n "${REGISTRY_USERNAME:-}" ] && [ -n "${REGISTRY_PASSWORD:-}" ]; then
+              echo "$REGISTRY_PASSWORD" | docker login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
+            fi
+
+            REGISTRY_HOST="$REGISTRY_HOST" IMAGE_TAG="$IMAGE_TAG" docker compose pull source2video
+            REGISTRY_HOST="$REGISTRY_HOST" IMAGE_TAG="$IMAGE_TAG" docker compose up -d --remove-orphans
+            REGISTRY_HOST="$REGISTRY_HOST" IMAGE_TAG="$IMAGE_TAG" docker compose ps
+
+            for i in $(seq 1 30); do
+              status="$(docker inspect -f '{{.State.Health.Status}}' source2video 2>/dev/null || true)"
+              if [ "$status" = "healthy" ]; then
+                break
+              fi
+              if [ "$i" = "30" ]; then
+                echo "source2video health status: $status" >&2
+                docker logs --tail 100 source2video >&2 || true
+                exit 1
+              fi
+              sleep 2
+            done
+
+            docker exec source2video node -e "fetch('http://127.0.0.1:3000/api/health').then(async r=>{console.log(await r.text()); process.exit(r.ok?0:1)}).catch(e=>{console.error(e); process.exit(1)})"
+            docker exec ftai-caddy wget -qO- --timeout=3 http://source2video:3000/api/health
+            echo "deploy ok: https://s2v.x-lin7.com/"

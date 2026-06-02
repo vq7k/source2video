@@ -4,17 +4,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import {
-  Archive,
   ChevronDown,
   ChevronRight,
-  CheckCircle2,
-  ClipboardCheck,
   FileText,
   Inbox,
-  MessageSquareText,
   PanelLeft,
   PanelRight,
-  PencilLine,
   Settings2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -31,11 +26,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import type { WritingRunRecord } from "@/lib/writing-run-types";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { WritingRunRecord } from "@doc-maker/writing-domain/types";
 import { cn } from "@/lib/utils";
 
 export type CenterMode = "jobs" | "editor";
 export type JobView = "all" | "drafts" | "precheck" | "reviewing" | "feedback" | "finalized";
+export type AppSection = "jobs";
 
 const jobViewCopy: Record<JobView, { label: string; hint: string }> = {
   all: { label: "全部任务", hint: "全部文本生产任务" },
@@ -46,26 +43,21 @@ const jobViewCopy: Record<JobView, { label: string; hint: string }> = {
   finalized: { label: "已定稿", hint: "已定稿导出" },
 };
 
-const jobRailItems: Array<{
-  view: JobView;
-  icon: LucideIcon;
-}> = [
-  { view: "all", icon: Inbox },
-  { view: "drafts", icon: PencilLine },
-  { view: "precheck", icon: ClipboardCheck },
-  { view: "reviewing", icon: MessageSquareText },
-  { view: "feedback", icon: CheckCircle2 },
-  { view: "finalized", icon: Archive },
-];
-
-const stageLabel: Record<string, string> = {
-  intake: "输入",
-  precheck: "检查",
-  review: "评审",
-  finalize: "定稿",
+const appSectionCopy: Record<AppSection, { label: string; hint: string; icon: LucideIcon }> = {
+  jobs: { label: "任务工作台", hint: "文本生产任务", icon: Inbox },
 };
 
+const appRailItems: Array<{
+  section: AppSection;
+  icon: LucideIcon;
+}> = [
+  { section: "jobs", icon: Inbox },
+];
+
 export function jobViewForRun(run: WritingRunRecord): JobView {
+  if (run.status === "draft_scope_ready") {
+    return "drafts";
+  }
   if (run.status === "finalized") {
     return "finalized";
   }
@@ -93,25 +85,21 @@ export function runStateLabel(run: WritingRunRecord) {
     case "finalized":
       return "已定稿";
     case "drafts":
-      return "草稿";
+      return run.status === "draft_scope_ready" ? "规则草稿" : "草稿";
     case "all":
       return "全部";
   }
 }
 
 export function LinearSidebar({
-  jobView,
-  counts,
-  onChangeView,
+  activeSection,
+  onChangeSection,
   onNewJob,
 }: {
-  jobView: JobView;
-  counts: Record<JobView, number>;
-  onChangeView: (view: JobView) => void;
+  activeSection: AppSection;
+  onChangeSection: (section: AppSection) => void;
   onNewJob: () => void;
 }) {
-  const views: JobView[] = ["all", "drafts", "precheck", "reviewing", "feedback", "finalized"];
-
   return (
     <aside className="flex h-full min-h-0 flex-col bg-[#efeee9]">
       <div className="border-b px-4 py-3">
@@ -128,24 +116,26 @@ export function LinearSidebar({
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-1 p-3">
-          {views.map((view) => {
-            const active = jobView === view;
-            const copy = jobViewCopy[view];
+          {appRailItems.map(({ section, icon: Icon }) => {
+            const active = activeSection === section;
+            const copy = appSectionCopy[section];
 
             return (
               <button
-                key={view}
+                key={section}
                 type="button"
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "rounded-md px-3 py-2 text-left transition",
                   active ? "bg-white shadow-sm ring-1 ring-zinc-200" : "hover:bg-white/70",
                 )}
-                onClick={() => onChangeView(view)}
+                onClick={() => onChangeSection(section)}
               >
                 <div className="flex items-center justify-between gap-2 text-sm">
-                  <span className="font-medium">{copy.label}</span>
-                  <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-xs">{counts[view]}</span>
+                  <span className="inline-flex items-center gap-2 font-medium">
+                    <Icon className="size-4" />
+                    {copy.label}
+                  </span>
                 </div>
                 <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{copy.hint}</div>
               </button>
@@ -158,14 +148,12 @@ export function LinearSidebar({
 }
 
 export function LinearSidebarRail({
-  jobView,
-  counts,
-  onChangeView,
+  activeSection,
+  onChangeSection,
   onNewJob,
 }: {
-  jobView: JobView;
-  counts: Record<JobView, number>;
-  onChangeView: (view: JobView) => void;
+  activeSection: AppSection;
+  onChangeSection: (section: AppSection) => void;
   onNewJob: () => void;
 }) {
   return (
@@ -181,32 +169,25 @@ export function LinearSidebarRail({
           aria-label="任务视图"
           className="flex flex-col items-center justify-start gap-1 py-1"
         >
-          {jobRailItems.map(({ view, icon: Icon }) => {
-            const count = counts[view];
-            const countLabel = count > 99 ? "99+" : String(count);
-            const copy = jobViewCopy[view];
-            const active = jobView === view;
+          {appRailItems.map(({ section, icon: Icon }) => {
+            const copy = appSectionCopy[section];
+            const active = activeSection === section;
 
             return (
               <button
-                key={view}
+                key={section}
                 type="button"
                 aria-current={active ? "page" : undefined}
-                aria-label={`${copy.label}，${count} 个任务`}
-                title={`${copy.label} · ${copy.hint} · ${count} 个`}
+                aria-label={`${copy.label}，${copy.hint}`}
+                title={`${copy.label} · ${copy.hint}`}
                 className={cn(
                   "relative flex size-10 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/70 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900",
                   active && "bg-white text-zinc-950 shadow-sm ring-1 ring-zinc-200",
                 )}
-                onClick={() => onChangeView(view)}
+                onClick={() => onChangeSection(section)}
               >
                 <Icon className="size-4" />
                 <span className="sr-only">{copy.label}</span>
-                {count ? (
-                  <span className="absolute -right-0.5 -top-0.5 max-w-7 truncate rounded-full bg-zinc-900 px-1 text-[9px] leading-4 text-white">
-                    {countLabel}
-                  </span>
-                ) : null}
               </button>
             );
           })}
@@ -219,9 +200,7 @@ export function LinearSidebarRail({
 export function LinearTopBar({
   centerMode,
   jobView,
-  stageBadge,
   activeRun,
-  runtimeBusy,
   sidebarCollapsed,
   inspectorCollapsed,
   showSidebarToggle = true,
@@ -229,13 +208,13 @@ export function LinearTopBar({
   inspectorToggleDisabled = false,
   onToggleSidebar,
   onToggleInspector,
+  onOpenAllJobs,
+  onOpenJobList,
   onOpenSettingsHref,
 }: {
   centerMode: CenterMode;
   jobView: JobView;
-  stageBadge: string;
   activeRun: WritingRunRecord | null;
-  runtimeBusy: boolean;
   sidebarCollapsed: boolean;
   inspectorCollapsed: boolean;
   showSidebarToggle?: boolean;
@@ -243,8 +222,13 @@ export function LinearTopBar({
   inspectorToggleDisabled?: boolean;
   onToggleSidebar: () => void;
   onToggleInspector: () => void;
+  onOpenAllJobs: () => void;
+  onOpenJobList: () => void;
   onOpenSettingsHref: string;
 }) {
+  const currentListLabel = jobViewCopy[jobView].label;
+  const currentPageLabel = centerMode === "editor" && !activeRun ? "新建任务" : currentListLabel;
+
   return (
     <header className="flex shrink-0 flex-col border-b bg-[#fbfaf6]">
       <div className="flex h-10 items-center justify-between gap-3 px-4">
@@ -273,12 +257,22 @@ export function LinearTopBar({
             <BreadcrumbList className="flex-nowrap text-xs">
               <BreadcrumbItem>
                 <BreadcrumbLink asChild>
-                  <Link href="/">doc-marker</Link>
+                  <button type="button" onClick={onOpenAllJobs}>
+                    doc-marker
+                  </button>
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem className="min-w-0">
-                <BreadcrumbPage className="truncate">{jobViewCopy[jobView].label}</BreadcrumbPage>
+                {activeRun ? (
+                  <BreadcrumbLink asChild>
+                    <button type="button" className="max-w-[160px] truncate text-left" onClick={onOpenJobList}>
+                      {currentListLabel}
+                    </button>
+                  </BreadcrumbLink>
+                ) : (
+                  <BreadcrumbPage className="truncate">{currentPageLabel}</BreadcrumbPage>
+                )}
               </BreadcrumbItem>
               {activeRun ? (
                 <>
@@ -318,19 +312,6 @@ export function LinearTopBar({
         </div>
       </div>
 
-      {centerMode === "editor" ? (
-        <div className="flex min-h-12 items-center justify-between gap-4 border-t bg-white px-4 py-2">
-          <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-              <span className="shrink-0">当前阶段</span>
-              <span className="truncate font-medium text-zinc-950">{stageLabel[stageBadge] ?? stageBadge}</span>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {runtimeBusy ? <Badge variant="secondary">运行中</Badge> : null}
-          </div>
-        </div>
-      ) : null}
     </header>
   );
 }
@@ -340,6 +321,8 @@ export function LinearJobList({
   activeRunId,
   expandedRunId,
   view,
+  counts,
+  onChangeView,
   onOpenRun,
   onToggleRun,
   renderExpandedRun,
@@ -348,19 +331,35 @@ export function LinearJobList({
   activeRunId: string | null;
   expandedRunId?: string | null;
   view: JobView;
+  counts: Record<JobView, number>;
+  onChangeView: (view: JobView) => void;
   onOpenRun: (run: WritingRunRecord) => void;
   onToggleRun?: (run: WritingRunRecord) => void;
   renderExpandedRun?: (run: WritingRunRecord) => ReactNode;
 }) {
+  const views: JobView[] = ["all", "drafts", "precheck", "reviewing", "feedback", "finalized"];
+
   return (
     <section className="flex min-h-0 flex-1 flex-col bg-white">
-      <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
+      <div className="flex shrink-0 flex-col gap-3 border-b px-4 py-3">
         <div className="min-w-0">
           <div className="text-sm font-semibold">任务列表</div>
           <div className="truncate text-xs text-muted-foreground">
             {jobViewCopy[view].label} · {runs.length} 个任务
           </div>
         </div>
+        <Tabs value={view} onValueChange={(value) => onChangeView(value as JobView)}>
+          <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-md bg-zinc-100 p-1">
+            {views.map((item) => (
+              <TabsTrigger key={item} value={item} className="gap-1.5 px-2.5 text-xs">
+                {jobViewCopy[item].label}
+                <span className="rounded-full bg-zinc-200 px-1.5 py-0 text-[10px] text-zinc-700">
+                  {counts[item]}
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="divide-y">

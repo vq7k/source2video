@@ -1,13 +1,17 @@
 import type {
   CompileRulePatchInput,
+  CreateRulePackageDraftInput,
   CreateWritingRunInput,
   DeriveWritingRuleScopeInput,
   FinalizeWritingRunInput,
   HumanFeedbackInput,
+  PublishRulePackageInput,
+  RecordTopicContextInput,
+  RulePackageRecord,
   RunGenerationBatchInput,
   WritingRuleScopeRecord,
   WritingRunRecord,
-} from "@/lib/writing-run-types";
+} from "@doc-maker/writing-domain/types";
 
 type ClientRequestOptions = {
   signal?: AbortSignal;
@@ -17,14 +21,17 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
 
   if (!response.ok) {
-    throw new Error(`请求失败：${url}`);
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      `请求失败：${url} (${response.status} ${response.statusText})${detail ? ` - ${detail.slice(0, 180)}` : ""}`,
+    );
   }
 
   return response.json() as Promise<T>;
 }
 
 export async function deriveRuleScope(input: DeriveWritingRuleScopeInput, options: ClientRequestOptions = {}) {
-  return requestJson<{ ruleScope: WritingRuleScopeRecord }>("/api/writing-runs/scope", {
+  return requestJson<{ ruleScope: WritingRuleScopeRecord; run: WritingRunRecord }>("/api/writing-runs/scope", {
     method: "POST",
     signal: options.signal,
     headers: { "content-type": "application/json" },
@@ -42,7 +49,11 @@ export async function createWritingRunRecord(input: CreateWritingRunInput, optio
 }
 
 export async function listWritingRuns() {
-  return requestJson<{ runs: WritingRunRecord[] }>("/api/writing-runs");
+  return requestJson<{ runs: WritingRunRecord[] }>("/api/writing-runs", { cache: "no-store" });
+}
+
+export async function listRulePackages() {
+  return requestJson<{ rulePackages: RulePackageRecord[] }>("/api/rule-packages");
 }
 
 export async function confirmWritingRun(runId: string, options: ClientRequestOptions = {}) {
@@ -67,6 +78,19 @@ export async function deleteWritingFeedback(runId: string, feedbackId: string, o
     signal: options.signal,
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ feedbackId }),
+  });
+}
+
+export async function recordWritingTopicContext(
+  runId: string,
+  input: RecordTopicContextInput,
+  options: ClientRequestOptions = {},
+) {
+  return requestJson<{ run: WritingRunRecord }>(`/api/writing-runs/${runId}/topic-context`, {
+    method: "POST",
+    signal: options.signal,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
   });
 }
 
@@ -99,6 +123,32 @@ export async function finalizeWritingRunRecord(
 ) {
   return requestJson<{ run: WritingRunRecord }>(`/api/writing-runs/${runId}/finalize`, {
     method: "POST",
+    signal: options.signal,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function createRulePackageDraft(
+  runId: string,
+  input: CreateRulePackageDraftInput = {},
+  options: ClientRequestOptions = {},
+) {
+  return requestJson<{ run: WritingRunRecord; rulePackage: RulePackageRecord }>(`/api/writing-runs/${runId}/rule-package`, {
+    method: "POST",
+    signal: options.signal,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function publishRulePackageDraft(
+  runId: string,
+  input: PublishRulePackageInput,
+  options: ClientRequestOptions = {},
+) {
+  return requestJson<{ run: WritingRunRecord; rulePackage: RulePackageRecord }>(`/api/writing-runs/${runId}/rule-package`, {
+    method: "PATCH",
     signal: options.signal,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),

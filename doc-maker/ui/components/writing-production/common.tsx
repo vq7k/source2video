@@ -32,12 +32,18 @@ export function SectionTitle({
   );
 }
 
-export function WarningCallout({ children }: { children: ReactNode }) {
+export function WarningCallout({
+  children,
+  title = "LLM 生成提示",
+}: {
+  children: ReactNode;
+  title?: string;
+}) {
   return (
     <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700" />
       <div>
-        <div className="font-medium">注意</div>
+        <div className="font-medium">{title}</div>
         <p className="mt-1 leading-5">{children}</p>
       </div>
     </div>

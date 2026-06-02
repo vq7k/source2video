@@ -7,7 +7,7 @@ import {
   RULE_PATCH_DRAFT_LIMIT,
   RULE_SNAPSHOT_RULE_LIMIT,
   type WritingRunRecord,
-} from "@/lib/writing-run-types";
+} from "@doc-maker/writing-domain/types";
 import { cn } from "@/lib/utils";
 
 export function CandidateWorkflowPanel({

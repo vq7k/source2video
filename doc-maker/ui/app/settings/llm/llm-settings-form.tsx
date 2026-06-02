@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import type { LLMNodeModelKey, LLMProviderKind, LLMRuntimeSettingsView } from "@/lib/llm/settings";
+import type { LLMNodeModelKey, LLMProviderKind, LLMRuntimeSettingsView } from "@doc-maker/writing-domain/llm/settings";
 
 type TestResult = {
   ok: boolean;

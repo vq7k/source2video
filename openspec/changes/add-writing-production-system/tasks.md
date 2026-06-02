@@ -86,3 +86,26 @@
 - [x] 12.2 新增 `writing-eval-adapter.ts`，把 Writing Candidate breakdown 映射到 core eval，再转回现有 L1 EvalRun。
 - [x] 12.3 将 Candidate FrameworkNodeRun 的 evalRuns 改为读取 core eval attribution，而不是硬编码通过。
 - [x] 12.4 使用 API 跑通 Scope/Precheck 后的 Candidate -> Eval -> Feedback -> RulePatch -> Next Batch 闭环。
+
+## 13. 竞品结论落地（下一步）
+
+- [x] 13.1 实现 Rule Scope “应用规则 / 不应用规则” A/B 对照预览，同一 Job Spec 下对比规则影响。
+- [x] 13.2 引入 Rule Package 命名边界：区分 Writing Rule Scope、Rule Package、Published Skill Package。
+- [x] 13.3 在 Scope / Precheck 风险中展示来源覆盖率、未覆盖来源和过度仿写风险，高风险阻断发布。
+- [ ] 13.4 将历史 Job Feedback Ledger 沉淀为 dataset draft，人工确认后再进入正式 eval dataset。
+- [ ] 13.5 暂不做 Source Store / RAG / workflow builder；当前继续使用 Reference Paste 与既有 trace/eval 闭环。
+
+## 14. 输出契约与规则来源边界修正
+
+- [x] 14.1 将全局 baseline 从“短视频口播 300-500 字”改为 Auto 文本产物，不预设字数、口播、TTS 或分镜内容规则。
+- [x] 14.2 将默认 Output Contract 置空；产物类型、长度范围、写法参考不再由系统静默预设。
+- [x] 14.3 保留流程 baseline：Intake -> Rule Scope -> Precheck -> Candidate -> Eval -> Feedback -> Snapshot。
+- [x] 14.4 建立规则来源互斥：无模板时 Rule Scope LLM 自动提炼；复用模板时不自动提炼规则。
+- [x] 14.5 输入契约只保存用户确认字段；Rule Scope / Precheck 生成内容必须标记为 LLM 派生，不静默反写左侧字段。
+
+## 15. Draft Job 持久化
+
+- [x] 15.1 点击“生成规则范围”成功后创建/更新 `draft_scope_ready` run，刷新后不丢失。
+- [x] 15.2 Scope extraction trace 绑定 draft run id，避免 Langfuse / local trace 变成 adhoc。
+- [x] 15.3 确认规则范围时复用同一个 draft run id，升级为 `precheck_ready`。
+- [x] 15.4 All Jobs / 草稿视图展示 Draft Job，但不把它混成正式 Precheck/Review 任务。

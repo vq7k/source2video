@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { discoverLLMRuntimeModels } from "@/lib/llm/model-discovery";
+import { discoverLLMRuntimeModels } from "@doc-maker/writing-domain/llm/model-discovery";
 import {
   readLLMRuntimeSettings,
   type LLMProviderKind,
   type LLMRuntimeSettings,
-} from "@/lib/llm/settings";
+} from "@doc-maker/writing-domain/llm/settings";
 
 export const runtime = "nodejs";
 

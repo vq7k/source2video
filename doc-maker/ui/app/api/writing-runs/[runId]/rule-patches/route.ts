@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { compileRulePatch } from "@/lib/writing-runtime";
-import type { CompileRulePatchInput } from "@/lib/writing-run-types";
+import { compileRulePatch } from "@doc-maker/writing-domain/runtime";
+import type { CompileRulePatchInput } from "@doc-maker/writing-domain/types";
 
 export const runtime = "nodejs";
 

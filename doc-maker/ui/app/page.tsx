@@ -9,10 +9,10 @@ import type { PanelImperativeHandle } from "react-resizable-panels";
 import {
 	AlertTriangle,
 	ArrowRight,
-	BarChart3,
 	BookOpenCheck,
 	CheckCircle2,
   ChevronLeft,
+  Copy,
   Download,
   Loader2,
   Sparkles,
@@ -28,6 +28,7 @@ import {
   LinearTopBar,
   jobViewForRun,
   runStateLabel,
+  type AppSection,
   type CenterMode,
   type JobView,
 } from "@/components/writing-production/linear-shell";
@@ -55,15 +56,18 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { FrameworkNodeRunRecord, LLMCallTraceRecord } from "@/lib/framework-run-types";
+import type { FrameworkNodeRunRecord, LLMCallTraceRecord } from "@doc-maker/writing-domain/framework-run-types";
 import {
   compileWritingRulePatch,
   confirmWritingRun,
+  createRulePackageDraft,
   createWritingRunRecord,
   deleteWritingFeedback,
   deriveRuleScope,
   finalizeWritingRunRecord,
+  listRulePackages,
   listWritingRuns,
+  publishRulePackageDraft,
   recordWritingFeedback,
   runWritingGenerationBatch,
 } from "@/lib/writing-run-client";
@@ -72,12 +76,13 @@ import type {
   CreateWritingRunInput,
   HumanFeedbackInput,
   HumanFeedbackRecord,
+  RulePackageRecord,
   TextOutputContract,
   WritingJobSpec,
   WritingRuleScopeItem,
   WritingRuleScopeRecord,
   WritingRunRecord,
-} from "@/lib/writing-run-types";
+} from "@doc-maker/writing-domain/types";
 import { cn } from "@/lib/utils";
 
 type FlowStage = "intake" | "precheck" | "review" | "finalize";
@@ -123,6 +128,19 @@ type BaselineCheck = {
   badge?: string;
 };
 
+type RuleScopeComparisonColumn = {
+  title: string;
+  badge: ReactNode;
+  summary: string;
+  bullets: string[];
+};
+
+type SourceCoverageItem = {
+  label: string;
+  status: "covered" | "missing" | "risk";
+  detail: string;
+};
+
 type SkillPackageOption = {
   id: string;
   category: string;
@@ -130,19 +148,72 @@ type SkillPackageOption = {
   status: string;
   description: string;
   prefill: Pick<JobSpec, "writingReference" | "reviewPreference">;
+  rulePackage?: RulePackageRecord;
+};
+
+type OutputTypeProfile = {
+  id: string;
+  label: string;
+  description: string;
+  contract: OutputContract;
 };
 
 const initialJobSpec: JobSpec = {
-  title: "主管周会复盘：AI Agent 项目如何从框架转向产品闭环",
-  goal:
-    "写一篇给内部主管看的复盘文，目标是解释为什么从框架优先调整为文本生产闭环，并给出下一步决策建议。",
-  source:
-    "已有 UI 讨论记录、OpenSpec 讨论记录、业务侧产品反馈；材料中缺少明确的主管评分样本。",
-  writingReference:
-    "参考专业技术作者的结构：先给判断，再拆证据，最后给可执行下一步；外部写作方法包 偏理性、低修辞、少口号。",
-  reviewPreference:
-    "主管审美不稳定。当前偏好：不要营销腔，不要泛泛谈 AI；标题克制，观点要可被追问。",
+  title: "",
+  goal: "",
+  source: "",
+  writingReference: "",
+  reviewPreference: "",
 };
+
+const legacySeedReviewPreferenceSuffix = "当前偏好：不要营销腔，不要泛泛谈 AI；标题克制，观点要可被追问。";
+const legacyAutoGoalPattern = /^基于快速输入原始内容完成一篇.+；先明确核心判断，再给出可追溯依据和下一步建议。$/;
+
+function ruleScopeReferenceText(ruleScope?: WritingRuleScopeRecord | null) {
+  return ruleScope?.items.map((item) => `${scopeKindLabel[item.kind]}：${item.text}`).join("\n") ?? "";
+}
+
+function cleanLegacySeedSpec(spec: JobSpec, ruleScope?: WritingRuleScopeRecord | null): JobSpec {
+  const autoRuleScopeReference = ruleScopeReferenceText(ruleScope);
+  return {
+    ...spec,
+    goal: legacyAutoGoalPattern.test(spec.goal) ? "" : spec.goal,
+    writingReference: spec.writingReference === autoRuleScopeReference ? "" : spec.writingReference,
+    reviewPreference:
+      spec.reviewPreference.endsWith(legacySeedReviewPreferenceSuffix) &&
+      (spec.reviewPreference.includes("审美不稳定") || spec.reviewPreference.includes("评审偏好不稳定"))
+        ? ""
+        : spec.reviewPreference,
+  };
+}
+
+function cleanLegacyOutputContract(contract?: OutputContract): OutputContract {
+  if (!contract) {
+    return initialOutputContract;
+  }
+
+  const isLegacyBaseline =
+    contract.artifactType === "auto-detected text artifact" &&
+    contract.lengthRange === "由本轮输入、上游产物和产物类型共同确定；不做全局字数预设。";
+  return isLegacyBaseline ? initialOutputContract : contract;
+}
+
+function cleanLegacySeedRun(run: WritingRunRecord): WritingRunRecord {
+  const cleanedSpec = cleanLegacySeedSpec(run.jobSpec, run.ruleScope);
+  const quickInput = run.quickIntake?.trim() ?? "";
+  const legacySourcePrefix = quickInput ? `快速输入原始内容：${quickInput}` : "";
+  const sourceWithoutPrefix =
+    legacySourcePrefix && cleanedSpec.source.trim() === legacySourcePrefix ? quickInput : cleanedSpec.source;
+
+  return {
+    ...run,
+    jobSpec: {
+      ...cleanedSpec,
+      source: sourceWithoutPrefix,
+    },
+    outputContract: cleanLegacyOutputContract(run.outputContract),
+  };
+}
 
 const initialQuickIntake: QuickIntake = {
   raw: "",
@@ -150,26 +221,35 @@ const initialQuickIntake: QuickIntake = {
 };
 
 const outputProfile = {
-  name: "短文本产物",
-  summary: "当前默认交付形态：短解释文本。下游 TTS、视觉指导和视频制作由独立节点处理。",
-  artifacts: ["short_text"],
+  name: "文本产物",
+  summary: "当前只预设文本生产流程，不全局预设短文、口播、TTS 或分镜内容规则。",
+  artifacts: ["text_artifact"],
 };
 
 const initialOutputContract: OutputContract = {
-  artifactType: "short explanatory text",
-  lengthRange: "300-500 中文字（约 60-90 秒口播基准）",
-  structure: "标题 + 判断开场 + 2-3 个短论证段 + 下一步",
-  formatRules: "Markdown 正文；除非任务明确要求，不生成表格。",
-  groundingRules: "每个关键判断必须能回指到底稿、用户输入或标注为待确认。",
-  specialHandling: "不编造事实；不复制参考文句式；不确定内容标注低置信；复杂公式只标记为下游专项处理。",
-  downstreamHandoff: "输出短文本产物；TTS 目标 60-90 秒；视频在下游节点独立处理。",
+  artifactType: "",
+  lengthRange: "",
+  structure: "",
+  formatRules: "",
+  groundingRules: "",
+  specialHandling: "",
+  downstreamHandoff: "",
 };
 
-const skillPackageOptions: SkillPackageOption[] = [
+const outputTypeProfiles: OutputTypeProfile[] = [
+  {
+    id: "auto",
+    label: "无产物模板 / 由 LLM 建议",
+    description: "不预设产物类型、长度或格式；由 Rule Scope 和 Precheck LLM 给出待确认建议。",
+    contract: initialOutputContract,
+  },
+];
+
+const baselineSkillPackageOptions: SkillPackageOption[] = [
   {
     id: "baseline-no-package",
     category: "本次文本",
-    version: "Baseline / No Published Skill Package",
+    version: "Baseline / No Published Rule Package",
     status: "baseline mode",
     description: "不套用历史类型，只根据本次快速输入和输入契约生成临时写作规则候选。",
     prefill: {
@@ -177,54 +257,30 @@ const skillPackageOptions: SkillPackageOption[] = [
       reviewPreference: "",
     },
   },
-  {
-    id: "exec-review",
-    category: "主管复盘文",
-    version: "主管复盘文 v0.3 candidate",
-    status: "active candidate",
-    description: "内部决策复盘写法，强调判断、证据和下一步。",
-    prefill: {
-      writingReference:
-        "参考专业技术作者的结构：先给判断，再拆证据，最后给可执行下一步；外部写作方法包 偏理性、低修辞、少口号。",
-      reviewPreference:
-        "主管审美不稳定。当前偏好：不要营销腔，不要泛泛谈 AI；标题克制，观点要可被追问。",
-    },
-  },
-  {
-    id: "video-script",
-    category: "视频脚本文案",
-    version: "视频脚本文案 v0.1 draft",
-    status: "draft",
-    description: "面向后续视频产物，强调脚本结构、镜头段落和发布反馈。",
-    prefill: {
-      writingReference:
-        "参考专业视频脚本结构：先给 hook，再拆段落论证，每段保留可转镜头的画面提示；避免长段抽象概念。",
-      reviewPreference:
-        "优先判断是否能转成视频：开头是否有抓手，段落是否可剪辑，事实是否可视化，结尾是否有明确行动。",
-    },
-  },
-  {
-    id: "xiaohongshu-talk",
-    category: "小红书口播稿",
-    version: "小红书口播稿 frozen",
-    status: "frozen",
-    description: "历史偏移较大，当前不推荐作为新任务起点。",
-    prefill: {
-      writingReference:
-        "历史口播样本只可参考节奏和信息密度，不复制句式；当前版本因偏移较大，默认不推荐继续开新主题。",
-      reviewPreference:
-        "重点检查是否过度口语化、是否制造夸张承诺、是否与业务事实脱节；低置信内容不能沉淀为 Skill Package。",
-    },
-  },
 ];
+
+function rulePackageToSkillPackageOption(rulePackage: RulePackageRecord): SkillPackageOption {
+  return {
+    id: rulePackage.id,
+    category: rulePackage.category,
+    version: rulePackage.version,
+    status: "published rule package",
+    description: rulePackage.summary,
+    prefill: {
+      writingReference: rulePackage.rules.map((rule) => rule.text).join("\n"),
+      reviewPreference: "",
+    },
+    rulePackage,
+  };
+}
 
 const autoFilledStack = [
   ["写作规则范围", "由快速输入和参考文本提炼结构、语气、禁忌、检查点，用户删减确认。"],
   ["输入契约", "渲染输入区字段：标题、目标、底稿、写法参考、评审偏好。"],
   ["生成前检查", "初始化内容摘要、依据边界、写作规则候选和风险检查。"],
   ["评分口径", "初始化基础质量、任务匹配、风格偏好、风险扣分和权重。"],
-  ["输出契约", "默认短解释文本：300-500 中文字、60-90 秒口播基准、Markdown 格式和下游 handoff。"],
-  ["写作约束", "带入结构、语气、禁止项、相似表达边界。"],
+  ["输出契约", "默认 Auto，不预设口播、TTS、分镜或字数；具体规则来自类型配置和上游输入。"],
+  ["写作约束", "带入结构、语气、禁止项、相似表达边界；不凭空发明专属风格。"],
   ["治理策略", "带入低置信通过、延迟反馈、回溯评分和规则清理策略。"],
 ];
 
@@ -240,6 +296,125 @@ const confidenceLabel: Record<WritingRuleScopeItem["confidence"], string> = {
   medium: "中置信",
   high: "高置信",
 };
+
+const ruleScopeSourceLabel: Record<WritingRuleScopeRecord["source"], string> = {
+  baseline: "仅基于本次输入",
+  reference_paste: "参考文本",
+  mixed: "本次输入 + 参考文本",
+  template: "规则模板",
+};
+
+function SourceBadge({
+  label,
+  tone = "zinc",
+}: {
+  label: string;
+  tone?: "zinc" | "blue" | "amber" | "violet" | "emerald";
+}) {
+  const toneClass = {
+    zinc: "border-zinc-200 bg-zinc-50 text-zinc-700",
+    blue: "border-blue-200 bg-blue-50 text-blue-800",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    violet: "border-violet-200 bg-violet-50 text-violet-800",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  }[tone];
+
+  return (
+    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", toneClass)}>
+      {label}
+    </span>
+  );
+}
+
+function ruleScopeEffectText(item: WritingRuleScopeItem) {
+  if (item.kind === "structure") {
+    return `结构约束：${item.text}`;
+  }
+  if (item.kind === "tone") {
+    return `语气约束：${item.text}`;
+  }
+  if (item.kind === "prohibition") {
+    return `禁忌约束：${item.text}`;
+  }
+  return `检查点：${item.text}`;
+}
+
+function buildRuleScopeComparison({
+  ruleScope,
+  precheckRun,
+}: {
+  ruleScope: WritingRuleScopeRecord | null;
+  precheckRun?: WritingRunRecord["precheckRun"] | null;
+}): RuleScopeComparisonColumn[] {
+  const appliedRules = ruleScope?.items.map(ruleScopeEffectText) ?? [];
+  const precheckRules =
+    precheckRun?.writingRulesCandidate.slice(0, 3).map((rule) => `Precheck 待确认：${rule}`) ?? [];
+
+  return [
+    {
+      title: "A / 不应用规则",
+      badge: <SourceBadge label="Job Spec only" tone="blue" />,
+      summary: "只使用标题、目标、底稿等输入契约，不把 Rule Scope 作为生成约束。",
+      bullets: [
+        "候选可以回答任务，但结构、语气、禁忌不被显式约束。",
+        "后续评分只能按通用质量和任务匹配判断，偏好归因较弱。",
+        "适合验证：当前输入本身是否已经足够清楚。",
+      ],
+    },
+    {
+      title: "B / 应用规则",
+      badge: (
+        <SourceBadge
+          label={ruleScope ? `${ruleScopeSourceLabel[ruleScope.source]} · ${ruleScope.items.length} 条` : "No Rule Scope"}
+          tone={ruleScope?.source === "template" ? "violet" : "amber"}
+        />
+      ),
+      summary: ruleScope
+        ? "在同一 Job Spec 上叠加已确认 Rule Scope，并让 Precheck 把规则归一为候选生成契约。"
+        : "尚未生成或加载 Rule Scope，无法比较规则影响。",
+      bullets: [
+        ...(appliedRules.length ? appliedRules.slice(0, 3) : ["暂无可应用规则。"]),
+        ...(precheckRules.length ? precheckRules.slice(0, 2) : []),
+      ],
+    },
+  ];
+}
+
+function buildSourceCoverage(run: WritingRunRecord | null, ruleScope: WritingRuleScopeRecord | null): SourceCoverageItem[] {
+  const referenceProvided = Boolean((run?.referencePaste ?? ruleScope?.referencePaste ?? "").trim());
+  const scopeUsesReference = ruleScope?.source === "reference_paste" || ruleScope?.source === "mixed";
+  const highRiskCount = run?.precheckRun.riskChecks.filter((risk) => risk.level === "high").length ?? 0;
+
+  return [
+    {
+      label: "本次输入",
+      status: run?.quickIntake?.trim() ? "covered" : "missing",
+      detail: run?.quickIntake?.trim() ? "已进入 Job Spec 和 Precheck 输入。" : "缺少快速输入，生成只能依赖后续手填字段。",
+    },
+    {
+      label: "参考文本",
+      status: referenceProvided ? (scopeUsesReference ? "covered" : "risk") : "missing",
+      detail: referenceProvided
+        ? scopeUsesReference
+          ? "参考文本已进入 Rule Scope 来源。"
+          : "提供了参考文本，但当前 Scope 未标记为参考来源，需要复查。"
+        : "未提供参考文本；不会沉淀专属风格，只能生成 baseline 规则。",
+    },
+    {
+      label: "规则范围",
+      status: ruleScope?.items.length ? "covered" : "missing",
+      detail: ruleScope?.items.length ? `${ruleScope.items.length} 条规则已确认，可进入生成契约。` : "尚无可应用规则。",
+    },
+    {
+      label: "发布风险",
+      status: highRiskCount > 0 ? "risk" : "covered",
+      detail:
+        highRiskCount > 0
+          ? `${highRiskCount} 条高风险；可继续生成候选，但不能发布为 Rule Package。`
+          : "未发现高风险；仍需候选评审后才能沉淀规则资产。",
+    },
+  ];
+}
 
 function escapeHtml(value: string) {
   return value
@@ -258,6 +433,22 @@ function slugifyFileName(value: string) {
     .slice(0, 64);
 
   return normalized || "text-artifact";
+}
+
+function titleFromQuickIntake(value: string) {
+  const firstLine = value.split("\n").find((line) => line.trim())?.trim() ?? "";
+  return firstLine.length > 52 ? `${firstLine.slice(0, 52)}...` : firstLine;
+}
+
+function outputTypeProfileIdFor(contract: OutputContract) {
+  return (
+    outputTypeProfiles.find(
+      (profile) =>
+        profile.contract.artifactType === contract.artifactType &&
+        profile.contract.lengthRange === contract.lengthRange &&
+        profile.contract.structure === contract.structure,
+    )?.id ?? "custom"
+  );
 }
 
 function buildCandidateDocHtml({
@@ -291,7 +482,7 @@ function buildCandidateDocHtml({
 </head>
 <body>
   <h1>${escapeHtml(candidate.title)}</h1>
-  <div class="meta">任务: ${escapeHtml(runId)} · 候选: ${escapeHtml(candidate.id)} · 评分: ${candidate.total}</div>
+  <div class="meta">任务: ${escapeHtml(runId)} · 候选: ${escapeHtml(candidate.id)} · Eval: ${candidate.total}</div>
   <div class="contract">
     <strong>输入契约</strong><br />
     ${escapeHtml(jobSpec.title)}<br />
@@ -313,7 +504,7 @@ function analyzeSelectionFeedback(
   const normalizedQuote = quote.trim().replace(/\s+/g, " ").slice(0, 180);
   const hasRiskWord = /风险|相似|复制|漂移|编造|事实|缺少/.test(normalizedQuote);
   const hasStyleWord = /鸡汤|营销|夸张|口号|书面|口语|啰嗦|冗余/.test(normalizedQuote);
-  const hasTaskWord = /目标|任务|主管|决策|下一步|闭环/.test(normalizedQuote);
+  const hasTaskWord = /目标|任务|评审|决策|下一步|闭环/.test(normalizedQuote);
 
   if (verdict === "liked") {
     return {
@@ -374,7 +565,7 @@ function analyzeSelectionFeedback(
       verdict,
       businessReason: "风格不对",
       likelyCause: "style",
-      issue: "选中文本与当前主管偏好或写法参考不一致。",
+      issue: "选中文本与当前评审偏好或写法参考不一致。",
       expected: "保持克制、少口号、先判断再给证据。",
       confidence: "medium",
     };
@@ -388,7 +579,7 @@ function analyzeSelectionFeedback(
       businessReason: "任务不准",
       likelyCause: "prompt",
       issue: "选中文本没有明显服务本轮沟通任务，可能造成跑题或重点漂移。",
-      expected: "重新贴合输入契约里的目标和受众，明确给主管的判断与下一步。",
+      expected: "重新贴合输入契约里的目标和受众，明确判断与下一步。",
       confidence: "medium",
     };
   }
@@ -418,9 +609,9 @@ const stageCopy: Record<
 > = {
   intake: {
     badge: "intake",
-    description: "默认使用 Baseline；历史 Skill Package 只在明确复用时选择。",
+    description: "默认使用 Baseline；历史 Rule Package 只在明确复用时选择。",
     nextTitle: "输入任务材料",
-    nextHint: "Baseline 先服务本次任务；Category / Skill Package 负责复用历史写法，不作为默认前提。",
+    nextHint: "Baseline 先服务本次任务；Rule Package 负责复用历史写法，不作为默认前提。",
     precheckMetric: "blocked",
     draftsMetric: "blocked",
   },
@@ -563,14 +754,19 @@ function WritingProductionClient() {
 	const [stage, setStage] = useState<FlowStage>("intake");
 	const [activeSource, setActiveSource] = useState<SourceKey | null>(null);
   const [centerMode, setCenterMode] = useState<CenterMode>("editor");
+  const [activeSection, setActiveSection] = useState<AppSection>("jobs");
   const [jobView, setJobView] = useState<JobView>("all");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1280);
   const [compactOverlay, setCompactOverlay] = useState<"inspector" | null>(null);
-  const [workbenchLayout, setWorkbenchLayout] = useState<Record<string, number> | undefined>(DEFAULT_WORKBENCH_LAYOUT);
-	const [selectedSkillPackageId, setSelectedSkillPackageId] = useState(skillPackageOptions[0].id);
+	const [workbenchLayout, setWorkbenchLayout] = useState<Record<string, number> | undefined>(DEFAULT_WORKBENCH_LAYOUT);
+	const [selectedSkillPackageId, setSelectedSkillPackageId] = useState(baselineSkillPackageOptions[0].id);
+	const [selectedOutputTypeProfileId, setSelectedOutputTypeProfileId] = useState(outputTypeProfiles[0].id);
 	const [ruleScope, setRuleScope] = useState<WritingRuleScopeRecord | null>(null);
+  const [publishedRulePackages, setPublishedRulePackages] = useState<RulePackageRecord[]>([]);
+  const [rulePackageDraft, setRulePackageDraft] = useState<RulePackageRecord | null>(null);
+  const [rulePackageTask, setRulePackageTask] = useState<"draft" | "publish" | null>(null);
 	const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 	const [finalizedCandidateId, setFinalizedCandidateId] = useState<string | null>(null);
 	const [activeRun, setActiveRun] = useState<WritingRunRecord | null>(null);
@@ -581,6 +777,13 @@ function WritingProductionClient() {
 	const [runtimeBusy, setRuntimeBusy] = useState(false);
 	const [runtimeTask, setRuntimeTask] = useState<RuntimeTaskKind | null>(null);
 	const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const skillPackageOptions = useMemo(
+    () => [
+      ...baselineSkillPackageOptions,
+      ...publishedRulePackages.map(rulePackageToSkillPackageOption),
+    ],
+    [publishedRulePackages],
+  );
 	const selectedSkillPackage = skillPackageOptions.find((skill) => skill.id === selectedSkillPackageId) ?? skillPackageOptions[0];
 	const isBaselinePackage = selectedSkillPackage.id === "baseline-no-package";
 	const selectedRuleScope = isBaselinePackage ? "本次文本" : selectedSkillPackage.category;
@@ -602,15 +805,29 @@ function WritingProductionClient() {
 	  [activeRun],
 	);
 	const latestGenerationRun = activeRun?.generationRuns?.at(-1) ?? null;
+	const evalTotalByCandidateId = useMemo(
+	  () =>
+	    new Map(
+	      (activeRun?.evalRun?.candidateResults ?? []).map((result) => [
+	        result.candidateId,
+	        result.total,
+	      ]),
+	    ),
+	  [activeRun?.evalRun],
+	);
 	const bestDraftIndex = useMemo(
 	  () => {
 	    if (!displayDrafts.length) {
 	      return 0;
 	    }
 
-	    return displayDrafts.reduce((bestIndex, draft, index) => (draft.total > displayDrafts[bestIndex].total ? index : bestIndex), 0);
+	    return displayDrafts.reduce((bestIndex, draft, index) => {
+	      const score = evalTotalByCandidateId.get(draft.id) ?? Number.NEGATIVE_INFINITY;
+	      const bestScore = evalTotalByCandidateId.get(displayDrafts[bestIndex].id) ?? Number.NEGATIVE_INFINITY;
+	      return score > bestScore ? index : bestIndex;
+	    }, 0);
 	  },
-	  [displayDrafts],
+	  [displayDrafts, evalTotalByCandidateId],
 	);
 	const selectedDraftIndex = useMemo(
 	  () => {
@@ -682,6 +899,9 @@ function WritingProductionClient() {
   }, [effectiveInspectorCollapsed]);
 
   function stageForRun(run: WritingRunRecord): FlowStage {
+    if (run.status === "draft_scope_ready") {
+      return "intake";
+    }
     if (run.status === "finalized") {
       return "finalize";
     }
@@ -690,23 +910,34 @@ function WritingProductionClient() {
   }
 
   function upsertAvailableRun(run: WritingRunRecord) {
+    const displayRun = cleanLegacySeedRun(run);
     setAvailableRuns((current) => [
-      run,
-      ...current.filter((item) => item.id !== run.id),
+      displayRun,
+      ...current.filter((item) => item.id !== displayRun.id),
     ]);
   }
 
+  function syncActiveRun(run: WritingRunRecord) {
+    const displayRun = cleanLegacySeedRun(run);
+    setActiveRun(displayRun);
+    upsertAvailableRun(displayRun);
+    return displayRun;
+  }
+
   function applyRun(run: WritingRunRecord, nextStage: FlowStage = stageForRun(run)) {
-    setActiveRun(run);
-    setSpec(run.jobSpec);
-    setOutputContract(run.outputContract ?? initialOutputContract);
+    const displayRun = cleanLegacySeedRun(run);
+    setActiveRun(displayRun);
+    setSpec(displayRun.jobSpec);
+    setOutputContract(displayRun.outputContract ?? initialOutputContract);
+    setSelectedOutputTypeProfileId(outputTypeProfileIdFor(displayRun.outputContract ?? initialOutputContract));
     setQuickIntake({
-      raw: run.quickIntake ?? "",
-      referencePaste: run.referencePaste ?? run.ruleScope?.referencePaste ?? "",
+      raw: displayRun.quickIntake ?? "",
+      referencePaste: displayRun.referencePaste ?? displayRun.ruleScope?.referencePaste ?? "",
     });
-    setRuleScope(run.ruleScope ?? null);
-    setSelectedCandidateId(run.finalizedCandidateId ?? null);
-    setFinalizedCandidateId(run.finalizedCandidateId ?? null);
+    setRuleScope(displayRun.ruleScope ?? null);
+    setRulePackageDraft(displayRun.rulePackages?.find((item) => item.status === "draft") ?? null);
+    setSelectedCandidateId(displayRun.finalizedCandidateId ?? null);
+    setFinalizedCandidateId(displayRun.finalizedCandidateId ?? null);
     setRunDirty(false);
     setRuntimeError(null);
     setStage(nextStage);
@@ -740,12 +971,51 @@ function WritingProductionClient() {
 
     setStage(nextStage);
     if (activeRun) {
-      window.history.replaceState(null, "", `/?runId=${encodeURIComponent(activeRun.id)}&stage=${nextStage}`);
+      replaceRunUrl(activeRun.id, nextStage);
     }
   }
 
+  function replaceRunUrl(runId: string, nextStage: FlowStage, candidateId?: string | null) {
+    const params = new URLSearchParams({ runId, stage: nextStage });
+    if (candidateId) {
+      params.set("candidateId", candidateId);
+    }
+    window.history.replaceState(null, "", `/?${params.toString()}`);
+  }
+
+  function normalizeRequestedStage(run: WritingRunRecord, nextStage: FlowStage | null) {
+    if (!nextStage) {
+      return stageForRun(run);
+    }
+    if ((nextStage === "review" || nextStage === "finalize") && !run.candidates.length) {
+      return stageForRun(run);
+    }
+    return nextStage;
+  }
+
   useEffect(() => {
-    if (hasLoadedLatestRun && (!requestedRunId || activeRun?.id === requestedRunId)) {
+    if (hasLoadedLatestRun && !requestedRunId) {
+      return;
+    }
+
+    if (hasLoadedLatestRun && activeRun?.id === requestedRunId) {
+      const nextStage = normalizeRequestedStage(activeRun, requestedStage);
+      if (stage !== nextStage) {
+        setStage(nextStage);
+      }
+      if (expandedRunId !== activeRun.id) {
+        setExpandedRunId(activeRun.id);
+      }
+      if (requestedCandidateId && selectedCandidateId !== requestedCandidateId) {
+        const requestedCandidateExists = activeRun.candidates.some((candidate) => candidate.id === requestedCandidateId);
+        if (requestedCandidateExists) {
+          setSelectedCandidateId(requestedCandidateId);
+          setFinalizedCandidateId((current) => current ?? requestedCandidateId);
+        }
+      }
+      if (nextStage !== requestedStage) {
+        replaceRunUrl(activeRun.id, nextStage, requestedCandidateId);
+      }
       return;
     }
 
@@ -753,23 +1023,48 @@ function WritingProductionClient() {
 
     async function loadLatestRun() {
       try {
-        const data = await listWritingRuns();
+        const [data, packageData] = await Promise.all([
+          listWritingRuns(),
+          listRulePackages(),
+        ]);
         const targetRun = requestedRunId
-          ? data.runs.find((run) => run.id === requestedRunId) ?? data.runs[0]
-          : data.runs[0];
+          ? data.runs.find((run) => run.id === requestedRunId) ?? null
+          : null;
 
         if (cancelled) {
           return;
         }
 
-        setAvailableRuns(data.runs);
-        if (targetRun) {
-          applyRun(targetRun, requestedStage ?? stageForRun(targetRun));
-          if (requestedCandidateId) {
+        setAvailableRuns(data.runs.map(cleanLegacySeedRun));
+        setPublishedRulePackages(packageData.rulePackages);
+        if (requestedRunId && targetRun) {
+          const nextStage = normalizeRequestedStage(targetRun, requestedStage);
+          const displayRun = cleanLegacySeedRun(targetRun);
+          const requestedCandidateExists = requestedCandidateId
+            ? displayRun.candidates.some((candidate) => candidate.id === requestedCandidateId)
+            : false;
+          applyRun(displayRun, nextStage);
+          setExpandedRunId(displayRun.id);
+          if (requestedCandidateExists && requestedCandidateId) {
             setSelectedCandidateId(requestedCandidateId);
             setFinalizedCandidateId((current) => current ?? requestedCandidateId);
           }
+          if (nextStage !== requestedStage || (requestedCandidateId && !requestedCandidateExists)) {
+            replaceRunUrl(displayRun.id, nextStage, requestedCandidateExists ? requestedCandidateId : null);
+          }
           setCenterMode("editor");
+        } else if (requestedRunId) {
+          setActiveRun(null);
+          setExpandedRunId(null);
+          setSelectedCandidateId(null);
+          setFinalizedCandidateId(null);
+          setCenterMode("jobs");
+          setRuntimeError(`找不到任务：${requestedRunId}`);
+          window.history.replaceState(null, "", "/");
+        } else {
+          setActiveRun(null);
+          setExpandedRunId(null);
+          setCenterMode("jobs");
         }
       } catch (error) {
         if (!cancelled) {
@@ -798,13 +1093,23 @@ function WritingProductionClient() {
 	  setFinalizedCandidateId(candidate.id);
 	  setStage("finalize");
     if (activeRun) {
-      window.history.replaceState(null, "", `/?runId=${encodeURIComponent(activeRun.id)}&stage=finalize&candidateId=${encodeURIComponent(candidate.id)}`);
+      replaceRunUrl(activeRun.id, "finalize", candidate.id);
     }
 	}
+
+  function selectReviewCandidate(candidateId: string) {
+    setSelectedCandidateId(candidateId);
+    if (activeRun) {
+      replaceRunUrl(activeRun.id, stage, candidateId);
+    }
+  }
 
   function selectFinalizedCandidate(candidateId: string) {
     setFinalizedCandidateId(candidateId);
     setSelectedCandidateId(candidateId);
+    if (activeRun) {
+      replaceRunUrl(activeRun.id, "finalize", candidateId);
+    }
   }
 
   function startNewJobDraft() {
@@ -812,8 +1117,10 @@ function WritingProductionClient() {
     setActiveRun(null);
     setExpandedRunId(null);
     setRuleScope(null);
+    setRulePackageDraft(null);
     setSpec(initialJobSpec);
     setOutputContract(initialOutputContract);
+    setSelectedOutputTypeProfileId(outputTypeProfiles[0].id);
     setQuickIntake(initialQuickIntake);
     setSelectedCandidateId(null);
     setFinalizedCandidateId(null);
@@ -832,7 +1139,7 @@ function WritingProductionClient() {
         sourceKeys: ["intent"],
         method: "Eval-driven Development：把目标转成可比较标准。",
         detail: spec.goal || "目标缺失时无法判断任务是否完成。",
-	        impact: "自动评分和人工评分表，用于判断候选是否跑偏。",
+	        impact: "独立 eval 节点和人工评分表，用于判断候选是否跑偏。",
         iteration: "未来可按业务场景调整权重。",
       },
       {
@@ -869,10 +1176,10 @@ function WritingProductionClient() {
         method: "Human preference eval：把主观偏好显性化。",
         detail: spec.reviewPreference || "没有评审偏好时仅使用 baseline 评分。",
 	        impact: "人工评分、偏好冲突提示和下一轮生成约束。",
-        iteration: "未来可从历史打分自动学习主管偏好。",
+        iteration: "未来可从历史打分自动学习评审偏好。",
       },
     ],
-    [spec],
+    [outputContract, spec],
   );
 
   function beginRuntimeTask(task: RuntimeTaskKind) {
@@ -923,17 +1230,69 @@ function WritingProductionClient() {
 
   function updateOutputContract(field: keyof OutputContract, value: string) {
     setOutputContract((current) => ({ ...current, [field]: value }));
+    setSelectedOutputTypeProfileId("custom");
     setRunDirty(true);
     setStage("precheck");
   }
 
+  function selectOutputTypeProfile(profileId: string) {
+    const profile = outputTypeProfiles.find((item) => item.id === profileId);
+    if (!profile) {
+      return;
+    }
+
+    setSelectedOutputTypeProfileId(profile.id);
+    setOutputContract(profile.contract);
+    setRunDirty(true);
+    setStage("precheck");
+  }
+
+  function selectRuleSource(packageId: string) {
+    const nextPackage = skillPackageOptions.find((item) => item.id === packageId);
+    if (!nextPackage) {
+      return;
+    }
+
+    setSelectedSkillPackageId(nextPackage.id);
+    setRuleScope(null);
+    setRunDirty(true);
+    setStage("intake");
+    setSpec((current) => ({
+      ...current,
+      writingReference: nextPackage.prefill.writingReference,
+      reviewPreference: nextPackage.prefill.reviewPreference,
+    }));
+  }
+
+  function currentSkillPackageSnapshot() {
+    return {
+      id: selectedSkillPackage.id,
+      category: selectedSkillPackage.category,
+      version: selectedSkillPackage.version,
+      status: selectedSkillPackage.status,
+      rulePackageId: selectedSkillPackage.rulePackage?.id,
+      rules: selectedSkillPackage.rulePackage?.rules.map((rule) => rule.text),
+      summary: selectedSkillPackage.rulePackage?.summary ?? selectedSkillPackage.description,
+    };
+  }
+
   async function deriveRuleScopeForIntake(signal?: AbortSignal) {
     const data = await deriveRuleScope({
+      runId: activeRun?.status === "draft_scope_ready" ? activeRun.id : undefined,
       quickIntake: quickIntake.raw,
       referencePaste: quickIntake.referencePaste,
+      skillPackage: currentSkillPackageSnapshot(),
+      outputProfile,
+      outputContract,
+      jobSpec: spec,
     }, { signal });
     setRuleScope(data.ruleScope);
-    return data.ruleScope;
+    const displayRun = syncActiveRun(data.run);
+    setExpandedRunId(displayRun.id);
+    setCenterMode("editor");
+    setStage("intake");
+    setRunDirty(false);
+    return { ...data, run: displayRun };
   }
 
   function removeRuleScopeItem(itemId: string) {
@@ -961,69 +1320,57 @@ function WritingProductionClient() {
     }
   }
 
-	async function createRunForSpec(
+  async function createRunForSpec(
     nextSpec: JobSpec,
     scopeOverride?: WritingRuleScopeRecord | null,
     signal?: AbortSignal,
+    draftRunIdOverride?: string,
   ) {
     const confirmedScope = scopeOverride
-        ? {
+      ? {
           ...scopeOverride,
           status: "confirmed" as const,
         }
       : null;
-	  const payload: CreateWritingRunInput = {
-	    quickIntake: quickIntake.raw,
+    const payload: CreateWritingRunInput = {
+      draftRunId: draftRunIdOverride ?? (activeRun?.status === "draft_scope_ready" ? activeRun.id : undefined),
+      quickIntake: quickIntake.raw,
       referencePaste: quickIntake.referencePaste,
       ruleScope: confirmedScope,
-	    skillPackage: {
-	      id: selectedSkillPackage.id,
-	      category: selectedSkillPackage.category,
-	      version: selectedSkillPackage.version,
-	      status: selectedSkillPackage.status,
-	    },
-	    outputProfile,
-	    outputContract,
-	    jobSpec: nextSpec,
-	  };
-	  const data = await createWritingRunRecord(payload, { signal });
-	  setActiveRun(data.run);
-    upsertAvailableRun(data.run);
-	  setRunDirty(false);
-	  return data.run;
-	}
+      skillPackage: {
+        ...currentSkillPackageSnapshot(),
+      },
+      outputProfile,
+      outputContract,
+      jobSpec: nextSpec,
+    };
+    const data = await createWritingRunRecord(payload, { signal });
+    const displayRun = syncActiveRun(data.run);
+    setRunDirty(false);
+    return displayRun;
+  }
 
-	async function confirmPrecheck() {
-	  const signal = beginRuntimeTask(activeRun && !runDirty ? "candidate_generation" : "precheck_normalization");
-	  try {
-	    const sourceRun = activeRun && !runDirty ? activeRun : await createRunForSpec(spec, ruleScope, signal);
-      switchRuntimeTask("candidate_generation");
-	    const data = await confirmWritingRun(sourceRun.id, { signal });
-	    setActiveRun(data.run);
-      upsertAvailableRun(data.run);
-      setJobView((current) => (current === "all" ? current : jobViewForRun(data.run)));
-	    setRunDirty(false);
-	    setStage("review");
-	  } catch (error) {
-      if (!isAbortError(error)) {
-	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
-      }
-	  } finally {
-	    finishRuntimeTask(signal);
-	  }
-	}
+  function keepRunOpenAfterStateChange(run: WritingRunRecord, nextStage: FlowStage) {
+    setJobView((current) => (current === "all" ? current : jobViewForRun(run)));
+    setCenterMode("editor");
+    setExpandedRunId(run.id);
+    setStage(nextStage);
+    replaceRunUrl(run.id, nextStage);
+  }
 
-  async function rerunPrecheck() {
-    const signal = beginRuntimeTask(ruleScope ? "precheck_normalization" : "scope_extraction");
+  async function confirmPrecheck() {
+    const signal = beginRuntimeTask(activeRun && !runDirty ? "candidate_generation" : "precheck_normalization");
     try {
-      const activeScope = ruleScope ?? (await deriveRuleScopeForIntake(signal));
-      if (!activeScope.items.length) {
-        setRuntimeError("写作规则范围为空，至少保留 1 条规则范围。");
-        return;
-      }
-      switchRuntimeTask("precheck_normalization");
-      await createRunForSpec(spec, activeScope, signal);
-      setStage("precheck");
+      const sourceRun = activeRun && !runDirty ? activeRun : await createRunForSpec(spec, ruleScope, signal);
+      switchRuntimeTask("candidate_generation");
+      const data = await confirmWritingRun(sourceRun.id, { signal });
+      const displayRun = syncActiveRun(data.run);
+      setJobView((current) => (current === "all" ? current : jobViewForRun(displayRun)));
+      setCenterMode("editor");
+      setExpandedRunId(displayRun.id);
+      setRunDirty(false);
+      setStage("review");
+      replaceRunUrl(displayRun.id, "review");
     } catch (error) {
       if (!isAbortError(error)) {
         setRuntimeError(error instanceof Error ? error.message : "运行时异常");
@@ -1033,52 +1380,71 @@ function WritingProductionClient() {
     }
   }
 
-	async function startJobSpec() {
-	  const signal = beginRuntimeTask(ruleScope ? "precheck_normalization" : "scope_extraction");
-	  try {
-	    const rawInput = quickIntake.raw.trim();
-	    const activeScope = ruleScope ?? (await deriveRuleScopeForIntake(signal));
-	    if (!activeScope.items.length) {
-	      setRuntimeError("写作规则范围为空，至少保留 1 条规则范围。");
-	      return;
-	    }
+  async function rerunPrecheck() {
+    const signal = beginRuntimeTask(ruleScope ? "precheck_normalization" : "scope_extraction");
+    try {
+      let activeScope = ruleScope;
+      let draftRunId = activeRun?.status === "draft_scope_ready" ? activeRun.id : undefined;
+      if (!activeScope) {
+        const data = await deriveRuleScopeForIntake(signal);
+        activeScope = data.ruleScope;
+        draftRunId = data.run.id;
+      }
+      if (!activeScope.items.length) {
+        setRuntimeError("写作规则范围为空，至少保留 1 条规则范围。");
+        return;
+      }
+      switchRuntimeTask("precheck_normalization");
+      const createdRun = await createRunForSpec(spec, activeScope, signal, draftRunId);
+      keepRunOpenAfterStateChange(createdRun, "precheck");
+    } catch (error) {
+      if (!isAbortError(error)) {
+        setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+      }
+    } finally {
+      finishRuntimeTask(signal);
+    }
+  }
+
+  async function startJobSpec() {
+    const signal = beginRuntimeTask(ruleScope ? "precheck_normalization" : "scope_extraction");
+    try {
+      const rawInput = quickIntake.raw.trim();
+      let activeScope = ruleScope;
+      let draftRunId = activeRun?.status === "draft_scope_ready" ? activeRun.id : undefined;
+      if (!activeScope) {
+        const data = await deriveRuleScopeForIntake(signal);
+        activeScope = data.ruleScope;
+        draftRunId = data.run.id;
+      }
+      if (!activeScope.items.length) {
+        setRuntimeError("写作规则范围为空，至少保留 1 条规则范围。");
+        return;
+      }
       switchRuntimeTask("precheck_normalization");
 
-	    const firstLine = rawInput.split("\n").find((line) => line.trim())?.trim() ?? "";
-	    const titleDraft = firstLine.length > 52 ? `${firstLine.slice(0, 52)}...` : firstLine;
-	    const scopeReference = activeScope.items
-	      .map((item) => `${scopeKindLabel[item.kind]}：${item.text}`)
-	      .join("\n");
-	    const nextSpec = {
-	      ...spec,
-	      title: titleDraft || spec.title,
-	      goal: rawInput
-	        ? `基于快速输入原始内容完成一篇${selectedRuleScope}；先明确核心判断，再给出可追溯依据和下一步建议。`
-	        : spec.goal,
-	      source: [
-	        rawInput ? `快速输入原始内容：${rawInput}` : spec.source,
-	        quickIntake.referencePaste.trim() ? `参考文本：${quickIntake.referencePaste.trim()}` : "",
-	      ]
-	        .filter(Boolean)
-	        .join("\n"),
-	      writingReference:
-	        [selectedSkillPackage.prefill.writingReference, scopeReference].filter(Boolean).join("\n") ||
-	        spec.writingReference,
-	      reviewPreference: selectedSkillPackage.prefill.reviewPreference || spec.reviewPreference,
-	    };
+      const titleDraft = titleFromQuickIntake(rawInput);
+      const nextSpec = {
+        ...spec,
+        title: spec.title || titleDraft,
+        goal: spec.goal,
+        source: spec.source || rawInput,
+        writingReference: selectedSkillPackage.prefill.writingReference || spec.writingReference,
+        reviewPreference: selectedSkillPackage.prefill.reviewPreference || spec.reviewPreference,
+      };
 
-	    setSpec(nextSpec);
-	    setStage("precheck");
-	    await createRunForSpec(nextSpec, activeScope, signal);
-	  } catch (error) {
+      setSpec(nextSpec);
+      const createdRun = await createRunForSpec(nextSpec, activeScope, signal, draftRunId);
+      keepRunOpenAfterStateChange(createdRun, "precheck");
+    } catch (error) {
       if (!isAbortError(error)) {
-	      setRunDirty(true);
-	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
+        setRunDirty(true);
+        setRuntimeError(error instanceof Error ? error.message : "运行时异常");
       }
-	  } finally {
-	    finishRuntimeTask(signal);
-	  }
-	}
+    } finally {
+      finishRuntimeTask(signal);
+    }
+  }
 
 	async function recordFeedback(feedback: HumanFeedbackInput) {
 	  if (!activeRun) {
@@ -1099,20 +1465,18 @@ function WritingProductionClient() {
 
 	    if (feedback.kind === "selection") {
         switchRuntimeTask("rule_patch_compilation");
-	      const patchData = await compileWritingRulePatch(
+        const patchData = await compileWritingRulePatch(
           data.run.id,
           { candidateId: feedback.candidateId },
           { signal },
         );
-	      setActiveRun(patchData.run);
-        upsertAvailableRun(patchData.run);
-        setJobView((current) => (current === "all" ? current : jobViewForRun(patchData.run)));
-	      return;
-	    }
+		      const displayRun = syncActiveRun(patchData.run);
+        setJobView((current) => (current === "all" ? current : jobViewForRun(displayRun)));
+		      return;
+		    }
 
-	    setActiveRun(data.run);
-      upsertAvailableRun(data.run);
-      setJobView((current) => (current === "all" ? current : jobViewForRun(data.run)));
+		    const displayRun = syncActiveRun(data.run);
+	      setJobView((current) => (current === "all" ? current : jobViewForRun(displayRun)));
 	  } catch (error) {
       if (!isAbortError(error)) {
 	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
@@ -1128,11 +1492,10 @@ function WritingProductionClient() {
 	    return;
 	  }
 
-	  const signal = beginRuntimeTask("feedback_reasoning");
-	  try {
-	    const data = await deleteWritingFeedback(activeRun.id, feedbackId, { signal });
-	    setActiveRun(data.run);
-      upsertAvailableRun(data.run);
+		  const signal = beginRuntimeTask("feedback_reasoning");
+		  try {
+		    const data = await deleteWritingFeedback(activeRun.id, feedbackId, { signal });
+		    syncActiveRun(data.run);
 	  } catch (error) {
       if (!isAbortError(error)) {
 	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
@@ -1148,13 +1511,14 @@ function WritingProductionClient() {
 	    return;
 	  }
 
-	  const signal = beginRuntimeTask("generation_batch");
-	  try {
-	    const data = await runWritingGenerationBatch(activeRun.id, { candidateCount: 3 }, { signal });
-	    setActiveRun(data.run);
-      upsertAvailableRun(data.run);
-      setJobView((current) => (current === "all" ? current : jobViewForRun(data.run)));
-	    setStage("review");
+		  const signal = beginRuntimeTask("generation_batch");
+		  try {
+		    const data = await runWritingGenerationBatch(activeRun.id, { candidateCount: 3 }, { signal });
+		    const displayRun = syncActiveRun(data.run);
+	      setJobView((current) => (current === "all" ? current : jobViewForRun(displayRun)));
+        setExpandedRunId(displayRun.id);
+		    setStage("review");
+        replaceRunUrl(displayRun.id, "review");
 	  } catch (error) {
       if (!isAbortError(error)) {
 	      setRuntimeError(error instanceof Error ? error.message : "运行时异常");
@@ -1187,14 +1551,59 @@ function WritingProductionClient() {
 
     try {
       const data = await finalizeWritingRunRecord(activeRun.id, { candidateId: candidate.id });
-      setActiveRun(data.run);
-      upsertAvailableRun(data.run);
+      const displayRun = syncActiveRun(data.run);
       setFinalizedCandidateId(candidate.id);
-      setJobView((current) => (current === "all" ? current : jobViewForRun(data.run)));
+      setSelectedCandidateId(candidate.id);
+      setJobView((current) => (current === "all" ? current : jobViewForRun(displayRun)));
+      replaceRunUrl(displayRun.id, "finalize", candidate.id);
     } catch (error) {
       setRuntimeError(error instanceof Error ? error.message : "定稿状态写入失败");
     }
 	}
+
+  async function createRulePackageDraftForFinalize(candidate: CandidateRecord) {
+    if (!activeRun) {
+      setRuntimeError("没有可沉淀规则包的任务");
+      return;
+    }
+
+    setRulePackageTask("draft");
+    setRuntimeError(null);
+    try {
+      const data = await createRulePackageDraft(activeRun.id, { candidateId: candidate.id });
+      const displayRun = syncActiveRun(data.run);
+      setRulePackageDraft(data.rulePackage);
+      setExpandedRunId(displayRun.id);
+    } catch (error) {
+      setRuntimeError(error instanceof Error ? error.message : "规则包草稿生成失败");
+    } finally {
+      setRulePackageTask(null);
+    }
+  }
+
+  async function publishRulePackageForFinalize(rulePackage: RulePackageRecord) {
+    if (!activeRun) {
+      setRuntimeError("没有可发布规则包的任务");
+      return;
+    }
+
+    setRulePackageTask("publish");
+    setRuntimeError(null);
+    try {
+      const data = await publishRulePackageDraft(activeRun.id, { packageId: rulePackage.id });
+      const displayRun = syncActiveRun(data.run);
+      setRulePackageDraft(data.rulePackage);
+      setPublishedRulePackages((current) => [
+        data.rulePackage,
+        ...current.filter((item) => item.id !== data.rulePackage.id),
+      ]);
+      setExpandedRunId(displayRun.id);
+    } catch (error) {
+      setRuntimeError(error instanceof Error ? error.message : "规则包发布失败");
+    } finally {
+      setRulePackageTask(null);
+    }
+  }
 
   const filteredRuns = useMemo(
     () => availableRuns.filter((run) => jobView === "all" || jobViewForRun(run) === jobView),
@@ -1220,11 +1629,45 @@ function WritingProductionClient() {
     }
   }
 
+  function openAllJobsList() {
+    window.history.replaceState(null, "", "/");
+    setJobView("all");
+    setActiveRun(null);
+    setExpandedRunId(null);
+    setSelectedCandidateId(null);
+    setFinalizedCandidateId(null);
+    setRuntimeError(null);
+    setCenterMode("jobs");
+  }
+
+  function openCurrentJobList() {
+    window.history.replaceState(null, "", "/");
+    setActiveRun(null);
+    setExpandedRunId(null);
+    setSelectedCandidateId(null);
+    setFinalizedCandidateId(null);
+    setRuntimeError(null);
+    setCenterMode("jobs");
+  }
+
+  function backToReviewStage() {
+    setStage("review");
+    if (activeRun) {
+      setExpandedRunId(activeRun.id);
+      replaceRunUrl(activeRun.id, "review", selectedCandidateId);
+    }
+  }
+
+  function changeAppSection(section: AppSection) {
+    setActiveSection(section);
+    setCenterMode("jobs");
+  }
+
   function openRun(run: WritingRunRecord = activeRun as WritingRunRecord) {
     if (!run) {
       return;
     }
-    window.history.replaceState(null, "", `/?runId=${encodeURIComponent(run.id)}&stage=${stageForRun(run)}`);
+    replaceRunUrl(run.id, stageForRun(run));
     applyRun(run);
     setCenterMode("editor");
   }
@@ -1235,7 +1678,9 @@ function WritingProductionClient() {
       return;
     }
 
-    applyRun(run);
+    const nextStage = run.id === activeRun?.id && canVisitStage(stage) ? stage : stageForRun(run);
+    replaceRunUrl(run.id, nextStage);
+    applyRun(run, nextStage);
     setExpandedRunId(run.id);
     setCenterMode("editor");
   }
@@ -1281,11 +1726,14 @@ function WritingProductionClient() {
         activeRun={activeRun}
         ruleScope={ruleScope}
         selectedSkillPackage={selectedSkillPackage}
+        skillPackageOptions={skillPackageOptions}
         isBaselinePackage={isBaselinePackage}
         selectedRuleScope={selectedRuleScope}
         quickIntake={quickIntake}
         spec={spec}
         outputContract={outputContract}
+        outputTypeProfiles={outputTypeProfiles}
+        selectedOutputTypeProfileId={selectedOutputTypeProfileId}
         activeSource={activeSource}
         runtimeBusy={runtimeBusy}
         runtimeTask={runtimeTask}
@@ -1296,9 +1744,13 @@ function WritingProductionClient() {
         selectedDraftIndex={selectedDraftIndex}
         bestDraftIndex={bestDraftIndex}
         finalizedDraft={finalizedDraft}
+        rulePackageDraft={rulePackageDraft}
+        rulePackageTask={rulePackageTask}
         onUpdateQuickIntake={updateQuickIntake}
         onUpdateSpec={updateSpec}
         onUpdateOutputContract={updateOutputContract}
+        onSelectOutputTypeProfile={selectOutputTypeProfile}
+        onSelectRuleSource={selectRuleSource}
         onSetActiveSource={setActiveSource}
         onClearActiveSource={() => setActiveSource(null)}
         onRemoveRuleScopeItem={removeRuleScopeItem}
@@ -1308,13 +1760,15 @@ function WritingProductionClient() {
         onConfirmPrecheck={confirmPrecheck}
         canVisitStage={canVisitStage}
         onVisitStage={visitStage}
-        onSelectCandidate={setSelectedCandidateId}
+        onSelectCandidate={selectReviewCandidate}
         onSelectFinalCandidate={selectFinalizedCandidate}
         onRecordFeedback={activeRun ? recordFeedback : undefined}
         onRunGenerationBatch={runGenerationBatch}
         onEnterFinalize={enterFinalize}
-        onBackToReview={() => setStage("review")}
+        onBackToReview={backToReviewStage}
         onExportDoc={exportFinalizedDoc}
+        onCreateRulePackageDraft={createRulePackageDraftForFinalize}
+        onPublishRulePackage={publishRulePackageForFinalize}
       />
     );
   }
@@ -1339,16 +1793,14 @@ function WritingProductionClient() {
         >
           {effectiveSidebarCollapsed ? (
             <LinearSidebarRail
-              jobView={jobView}
-              counts={viewCounts}
-              onChangeView={changeJobView}
+              activeSection={activeSection}
+              onChangeSection={changeAppSection}
               onNewJob={startNewJobDraft}
             />
           ) : (
             <LinearSidebar
-              jobView={jobView}
-              counts={viewCounts}
-              onChangeView={changeJobView}
+              activeSection={activeSection}
+              onChangeSection={changeAppSection}
               onNewJob={startNewJobDraft}
             />
           )}
@@ -1366,9 +1818,7 @@ function WritingProductionClient() {
           <LinearTopBar
             centerMode={centerMode}
             jobView={jobView}
-            stageBadge={stageCopy[stage].badge}
             activeRun={activeRun}
-            runtimeBusy={runtimeBusy}
             sidebarCollapsed={effectiveSidebarCollapsed}
             inspectorCollapsed={effectiveInspectorCollapsed}
             showSidebarToggle={!compactWorkbench && !autoCollapseAuxPanels}
@@ -1382,6 +1832,8 @@ function WritingProductionClient() {
                   ? expandInspector
                   : collapseInspector
             }
+            onOpenAllJobs={openAllJobsList}
+            onOpenJobList={openCurrentJobList}
             onOpenSettingsHref="/settings/llm"
           />
 
@@ -1403,6 +1855,8 @@ function WritingProductionClient() {
                 runs={filteredRuns}
                 activeRunId={activeRun?.id ?? null}
                 view={jobView}
+                counts={viewCounts}
+                onChangeView={changeJobView}
                 onOpenRun={openRun}
               />
             ) : compactWorkbench ? (
@@ -1415,6 +1869,8 @@ function WritingProductionClient() {
                 activeRunId={activeRun?.id ?? null}
                 expandedRunId={expandedRunId}
                 view={jobView}
+                counts={viewCounts}
+                onChangeView={changeJobView}
                 onOpenRun={openRun}
                 onToggleRun={toggleRunDetails}
                 renderExpandedRun={(run) =>
@@ -1520,22 +1976,34 @@ function RuleScopePreview({
   if (!ruleScope) {
     return (
       <section className="rounded-lg border border-dashed bg-zinc-50 p-4 text-sm text-muted-foreground">
-        写作规则范围尚未生成。它是进入输入契约前的临时规则范围，只包含结构、语气、禁忌和检查点。
-      </section>
-    );
-  }
+        <div className="mb-2 flex flex-wrap gap-2">
+          <SourceBadge label="Flow Baseline" tone="zinc" />
+          <SourceBadge label="User Input" tone="blue" />
+	        </div>
+	        写作规则范围尚未生成。无模板时由 LLM 从用户输入和参考文本中拆出；选择模板时直接加载模板规则，不调用 Rule Scope LLM。
+	      </section>
+	    );
+	  }
 
-  const visibleItems = ruleScope.items.slice(0, 3);
-  const hiddenItems = ruleScope.items.slice(3);
+  const visibleLimit = ruleScope.items.length > 6 ? 6 : ruleScope.items.length;
+  const visibleItems = ruleScope.items.slice(0, visibleLimit);
+	  const hiddenItems = ruleScope.items.slice(visibleLimit);
+	  const sourceLabel = ruleScopeSourceLabel[ruleScope.source];
+  const templateScope = ruleScope.source === "template";
 
-  return (
-    <section className="space-y-3 rounded-lg border bg-white p-4">
+	  return (
+	    <section className="space-y-3 rounded-lg border bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold">写作规则范围</div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            轻量规则范围，默认只展示关键 3 条；提炼评分：{ruleScope.eval.score} / 100；来源 {ruleScope.source}。
-          </p>
+	          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+	            写作规则范围
+	            <SourceBadge label={templateScope ? "Template Rule / 模板复用" : "LLM Generated / 模型生成"} tone={templateScope ? "violet" : "amber"} />
+	            <SourceBadge label="Editable Rule" tone="violet" />
+	            <SourceBadge label="Saved Draft" tone="emerald" />
+	          </div>
+	          <p className="mt-1 text-sm text-muted-foreground">
+	            {templateScope ? "已加载" : "LLM 已拆出"} {ruleScope.items.length} 条临时规则，已保存为 Draft Job；提炼评分：{ruleScope.eval.score} / 100；来源：{sourceLabel}。
+	          </p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             <span className="rounded-full border bg-zinc-50 px-2 py-1 font-mono [overflow-wrap:anywhere]">
               {ruleScope.llmTrace.provider} / {ruleScope.llmTrace.model}
@@ -1555,15 +2023,17 @@ function RuleScopePreview({
         </div>
         <Badge variant="outline">{ruleScope.status}</Badge>
       </div>
-      <WarningCallout>{ruleScope.warning}</WarningCallout>
-      <div className="grid gap-2">
-        {visibleItems.map((item) => (
-          <div key={item.id} className="rounded-lg border bg-zinc-50 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
+	      <WarningCallout title={templateScope ? "模板复用提示" : "LLM 生成提示"}>{ruleScope.warning}</WarningCallout>
+	      <div className="grid gap-2">
+	        {visibleItems.map((item) => (
+	          <div key={item.id} className={cn("rounded-lg border p-3", templateScope ? "border-violet-100 bg-violet-50/40" : "border-amber-100 bg-amber-50/40")}>
+	            <div className="flex items-start justify-between gap-3">
+	              <div className="min-w-0">
+	                <div className="flex flex-wrap items-center gap-2">
+	                  <SourceBadge label={templateScope ? "Template Rule" : "LLM Generated"} tone={templateScope ? "violet" : "amber"} />
                   <Badge variant="secondary">{scopeKindLabel[item.kind]}</Badge>
                   <Badge variant="outline">{confidenceLabel[item.confidence]}</Badge>
+                  <SourceBadge label="可删除" tone="violet" />
                 </div>
                 <p className="mt-2 text-sm text-zinc-900">{item.text}</p>
                 <details className="mt-1 text-xs text-muted-foreground">
@@ -1589,12 +2059,14 @@ function RuleScopePreview({
             其余 {hiddenItems.length} 条已折叠
           </summary>
           <div className="mt-3 grid gap-2">
-            {hiddenItems.map((item) => (
-              <div key={item.id} className="flex items-start justify-between gap-3 rounded-md border bg-white p-2">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
+	            {hiddenItems.map((item) => (
+	              <div key={item.id} className="flex items-start justify-between gap-3 rounded-md border bg-white p-2">
+	                <div className="min-w-0">
+	                  <div className="flex flex-wrap items-center gap-2">
+	                    <SourceBadge label={templateScope ? "Template Rule" : "LLM Generated"} tone={templateScope ? "violet" : "amber"} />
                     <Badge variant="secondary">{scopeKindLabel[item.kind]}</Badge>
                     <Badge variant="outline">{confidenceLabel[item.confidence]}</Badge>
+                    <SourceBadge label="可删除" tone="violet" />
                   </div>
                   <p className="mt-1 text-sm text-zinc-900">{item.text}</p>
                 </div>
@@ -1702,10 +2174,21 @@ function StagePath({
               >
                 <span className="font-medium">{step.label}</span>
                 <span className="ml-1 opacity-75">{step.hint}</span>
+                {active ? (
+                  <span className="ml-2 rounded-full border border-white/25 bg-white/15 px-1.5 py-0.5 text-[10px] font-medium">
+                    流程预设
+                  </span>
+                ) : null}
               </button>
             </div>
           );
         })}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 border-t pt-2 text-xs text-muted-foreground">
+        <SourceBadge label="Flow Baseline / 流程预设" tone="zinc" />
+        <SourceBadge label="User Input / 用户输入" tone="blue" />
+        <SourceBadge label="LLM Generated / 模型生成" tone="amber" />
+        <span>导航节点是固定流程；具体字段和检查结果按来源标签区分。</span>
       </div>
     </nav>
   );
@@ -1716,11 +2199,14 @@ function LinearEditor({
   activeRun,
   ruleScope,
   selectedSkillPackage,
+  skillPackageOptions,
   isBaselinePackage,
   selectedRuleScope,
   quickIntake,
   spec,
   outputContract,
+  outputTypeProfiles,
+  selectedOutputTypeProfileId,
   activeSource,
   runtimeBusy,
   runtimeTask,
@@ -1731,9 +2217,13 @@ function LinearEditor({
   selectedDraftIndex,
   bestDraftIndex,
   finalizedDraft,
+  rulePackageDraft,
+  rulePackageTask,
   onUpdateQuickIntake,
   onUpdateSpec,
   onUpdateOutputContract,
+  onSelectOutputTypeProfile,
+  onSelectRuleSource,
   onSetActiveSource,
   onClearActiveSource,
   onRemoveRuleScopeItem,
@@ -1750,16 +2240,21 @@ function LinearEditor({
   onEnterFinalize,
   onBackToReview,
   onExportDoc,
+  onCreateRulePackageDraft,
+  onPublishRulePackage,
 }: {
   stage: FlowStage;
   activeRun: WritingRunRecord | null;
   ruleScope: WritingRuleScopeRecord | null;
-  selectedSkillPackage: (typeof skillPackageOptions)[number];
+  selectedSkillPackage: SkillPackageOption;
+  skillPackageOptions: SkillPackageOption[];
   isBaselinePackage: boolean;
   selectedRuleScope: string;
   quickIntake: QuickIntake;
   spec: JobSpec;
   outputContract: OutputContract;
+  outputTypeProfiles: OutputTypeProfile[];
+  selectedOutputTypeProfileId: string;
   activeSource: SourceKey | null;
   runtimeBusy: boolean;
   runtimeTask: RuntimeTaskKind | null;
@@ -1770,9 +2265,13 @@ function LinearEditor({
   selectedDraftIndex: number;
   bestDraftIndex: number;
   finalizedDraft: CandidateRecord | null;
+  rulePackageDraft: RulePackageRecord | null;
+  rulePackageTask: "draft" | "publish" | null;
   onUpdateQuickIntake: (field: keyof QuickIntake, value: string) => void;
   onUpdateSpec: (field: keyof JobSpec, value: string) => void;
   onUpdateOutputContract: (field: keyof OutputContract, value: string) => void;
+  onSelectOutputTypeProfile: (profileId: string) => void;
+  onSelectRuleSource: (packageId: string) => void;
   onSetActiveSource: (source: SourceKey) => void;
   onClearActiveSource: () => void;
   onRemoveRuleScopeItem: (itemId: string) => void;
@@ -1789,8 +2288,23 @@ function LinearEditor({
   onEnterFinalize: () => void;
   onBackToReview: () => void;
   onExportDoc: (candidate: CandidateRecord) => Promise<void> | void;
+  onCreateRulePackageDraft: (candidate: CandidateRecord) => Promise<void> | void;
+  onPublishRulePackage: (rulePackage: RulePackageRecord) => Promise<void> | void;
 }) {
   const [precheckTab, setPrecheckTab] = useState("precheck");
+  const quickTitle = titleFromQuickIntake(quickIntake.raw);
+  const titleBadge =
+    spec.title && quickTitle && spec.title === quickTitle ? (
+      <SourceBadge label="System Derived / 从原始输入提取" tone="zinc" />
+    ) : spec.title ? (
+      <SourceBadge label="User Input / 用户确认" tone="blue" />
+    ) : null;
+  const sourceBadge =
+    spec.source && spec.source.trim() === quickIntake.raw.trim() ? (
+      <SourceBadge label="User Input Copy / 从原始输入复制" tone="blue" />
+    ) : spec.source ? (
+      <SourceBadge label="User Input / 用户确认" tone="blue" />
+    ) : null;
 
   if (stage === "intake") {
     return (
@@ -1798,30 +2312,64 @@ function LinearEditor({
         <section className="flex min-h-[720px] flex-col rounded-lg border bg-white p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-base font-semibold">新建任务草稿</h2>
+              <h2 className="text-base font-semibold">Draft Job 草稿</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                单入口输入一句想法或粘贴材料，先生成轻量写作规则范围。
+                先保存输入和规则范围，再确认进入生成前检查。
               </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <SourceBadge label="Flow Baseline：流程固定" tone="zinc" />
+                <SourceBadge label="User Input：你填写" tone="blue" />
+                <SourceBadge label="LLM Generated：模型拆分" tone="amber" />
+              </div>
             </div>
-            <Badge variant="outline">{isBaselinePackage ? "基线" : selectedSkillPackage.category}</Badge>
+            <Badge variant="outline">{isBaselinePackage ? "Auto / 未套用类型" : selectedSkillPackage.category}</Badge>
           </div>
           <div className="mt-4 flex flex-1 flex-col gap-3">
+            <Field label="规则来源">
+              <select
+                value={selectedSkillPackage.id}
+                onChange={(event) => onSelectRuleSource(event.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {skillPackageOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.id === "baseline-no-package" ? "无模板：LLM 自动提炼规则" : `复用模板：${option.category}`}
+                  </option>
+                ))}
+                {skillPackageOptions.length === 1 ? <option disabled>暂无已发布规则模板</option> : null}
+              </select>
+              <p className="text-xs leading-5 text-muted-foreground">
+                无模板时调用 Rule Scope LLM 自动提炼；选择模板时只加载模板规则，不触发规则提炼 LLM。
+              </p>
+            </Field>
             <Textarea
               value={quickIntake.raw}
               onChange={(event) => onUpdateQuickIntake("raw", event.target.value)}
               className="min-h-32"
               placeholder="一句话想法、会议记录、视频转写、参考片段或底稿。"
             />
+            <p className="-mt-2 text-xs text-blue-700">
+              User Input：这部分完全来自你，系统不会把它当成固定规则。
+            </p>
             <Textarea
               value={quickIntake.referencePaste}
               onChange={(event) => onUpdateQuickIntake("referencePaste", event.target.value)}
               className="min-h-24"
               placeholder="可选：粘贴参考文本。没有参考文本时只生成基线规则范围。"
             />
+            <p className="-mt-2 text-xs text-blue-700">
+              可选参考文本：用于提炼临时规则，不会直接发布为长期风格。
+            </p>
             <RuleScopePreview ruleScope={ruleScope} onRemoveItem={onRemoveRuleScopeItem} />
             <div className="mt-auto flex items-center justify-end gap-2 border-t pt-3">
               <Button variant="outline" onClick={onGenerateRuleScope} disabled={runtimeBusy}>
-                {runtimeTask === "scope_extraction" ? "规则提炼中..." : "生成规则范围"}
+                {runtimeTask === "scope_extraction"
+                  ? isBaselinePackage
+                    ? "规则提炼中..."
+                    : "模板加载中..."
+                  : isBaselinePackage
+                    ? "生成规则范围"
+                    : "加载模板规则"}
               </Button>
               <Button onClick={onStartJobSpec} disabled={runtimeBusy || (ruleScope?.items.length ?? 0) === 0}>
                 确认规则范围并进入检查
@@ -1840,28 +2388,98 @@ function LinearEditor({
         <section className="grid min-h-[720px] gap-4 rounded-lg border bg-white p-4 xl:grid-cols-[minmax(0,1fr)_390px]">
           <div className="flex min-w-0 flex-col gap-4">
             <div>
-              <h2 className="text-base font-semibold">输入契约</h2>
-              <p className="mt-1 text-sm text-muted-foreground">修改输入后需要重新运行生成前检查。</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-semibold">输入契约</h2>
+                <SourceBadge label="User Input / 用户输入" tone="blue" />
+                <SourceBadge label="Flow Baseline / 字段结构" tone="zinc" />
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                字段结构是系统预设；字段内容来自用户输入或上一步确认的规则范围。修改后需要重新运行生成前检查。
+              </p>
             </div>
-            <Field label="标题 / 任务" sourceKey="intent" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
+            <Field label="标题 / 任务" badge={titleBadge} sourceKey="intent" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
               <Input value={spec.title} onChange={(event) => onUpdateSpec("title", event.target.value)} />
             </Field>
-            <Field label="目标" sourceKey="intent" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
-              <Textarea value={spec.goal} onChange={(event) => onUpdateSpec("goal", event.target.value)} className="min-h-20" />
+            <Field
+              label="目标"
+              badge={spec.goal ? <SourceBadge label="User Input / 用户确认" tone="blue" /> : null}
+              sourceKey="intent"
+              activeSource={activeSource}
+              onActivate={onSetActiveSource}
+              onClear={onClearActiveSource}
+            >
+              <Textarea
+                value={spec.goal}
+                onChange={(event) => onUpdateSpec("goal", event.target.value)}
+                className="min-h-20"
+                placeholder="未指定：右侧 Precheck LLM 会基于原始输入生成待确认建议，不回填本字段"
+              />
             </Field>
-            <Field label="底稿 / 原始素材" sourceKey="evidence" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
+            <Field label="底稿 / 原始素材" badge={sourceBadge} sourceKey="evidence" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
               <Textarea value={spec.source} onChange={(event) => onUpdateSpec("source", event.target.value)} className="min-h-28" />
+            </Field>
+            <Field label="规则来源">
+              <div className="flex flex-wrap gap-2">
+                {isBaselinePackage ? (
+                  <SourceBadge label="无模板：Rule Scope 由 LLM 生成" tone="amber" />
+                ) : (
+                  <SourceBadge label="模板复用：未调用 Rule Scope LLM" tone="violet" />
+                )}
+              </div>
+              <select
+                value={selectedSkillPackage.id}
+                onChange={(event) => onSelectRuleSource(event.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {skillPackageOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.id === "baseline-no-package" ? "无模板：LLM 自动提炼规则" : `复用模板：${option.category}`}
+                  </option>
+                ))}
+                {skillPackageOptions.length === 1 ? <option disabled>暂无已发布规则模板</option> : null}
+              </select>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                规则来源互斥：无模板时由 LLM 自动生成 Draft Rule Scope；选择模板后不自动生成，只使用模板规则。
+              </p>
             </Field>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="产物类型" sourceKey="output" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
-                <Input value={outputContract.artifactType} onChange={(event) => onUpdateOutputContract("artifactType", event.target.value)} />
+                <Input
+                  value={outputContract.artifactType}
+                  onChange={(event) => onUpdateOutputContract("artifactType", event.target.value)}
+                  placeholder="未指定：由右侧 Precheck LLM 给出待确认建议"
+                />
               </Field>
               <Field label="长度范围" sourceKey="output" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
-                <Input value={outputContract.lengthRange} onChange={(event) => onUpdateOutputContract("lengthRange", event.target.value)} />
+                <Input
+                  value={outputContract.lengthRange}
+                  onChange={(event) => onUpdateOutputContract("lengthRange", event.target.value)}
+                  placeholder="未指定：由右侧 Precheck LLM 给出待确认建议"
+                />
               </Field>
             </div>
-            <Field label="写法参考" sourceKey="style" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
-              <Textarea value={spec.writingReference} onChange={(event) => onUpdateSpec("writingReference", event.target.value)} className="min-h-24" />
+            <Field
+              label="写法参考"
+              badge={
+                spec.writingReference ? (
+                  isBaselinePackage ? (
+                    <SourceBadge label="User Input / 用户确认" tone="blue" />
+                  ) : (
+                    <SourceBadge label="Template Rule / 模板规则" tone="violet" />
+                  )
+                ) : null
+              }
+              sourceKey="style"
+              activeSource={activeSource}
+              onActivate={onSetActiveSource}
+              onClear={onClearActiveSource}
+            >
+              <Textarea
+                value={spec.writingReference}
+                onChange={(event) => onUpdateSpec("writingReference", event.target.value)}
+                className="min-h-24"
+                placeholder="未指定：无模板时不预设写法；由 Rule Scope / Precheck 生成待确认建议"
+              />
             </Field>
             <Field label="评审偏好" sourceKey="review" activeSource={activeSource} onActivate={onSetActiveSource} onClear={onClearActiveSource}>
               <Textarea value={spec.reviewPreference} onChange={(event) => onUpdateSpec("reviewPreference", event.target.value)} className="min-h-24" />
@@ -1871,8 +2489,9 @@ function LinearEditor({
           <aside className="flex min-w-0 flex-col">
             <Tabs value={precheckTab} onValueChange={setPrecheckTab} className="min-h-0 flex flex-1 flex-col overflow-hidden rounded-lg border bg-white">
               <div className="border-b px-4 py-3">
-                <TabsList className="grid w-full grid-cols-2">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="precheck">生成前检查</TabsTrigger>
+                  <TabsTrigger value="ab">规则对照</TabsTrigger>
                   <TabsTrigger value="eval">评分口径</TabsTrigger>
                 </TabsList>
               </div>
@@ -1880,31 +2499,56 @@ function LinearEditor({
               <TabsContent value="precheck" className="m-0 min-h-0 flex-1 overflow-hidden">
                 <ScrollArea className="h-full">
                   <div className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h2 className="text-base font-semibold">生成前检查</h2>
-                        <p className="mt-1 text-sm text-muted-foreground">检查结果是候选生成前的契约。</p>
-                      </div>
-                      <Badge variant="outline">{precheckTrace ? `${precheckTrace.provider}` : "waiting"}</Badge>
-                    </div>
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div>
+	                        <div className="flex flex-wrap items-center gap-2">
+	                          <h2 className="text-base font-semibold">生成前检查</h2>
+                            <SourceBadge label="LLM Generated / 模型生成" tone="amber" />
+                            <SourceBadge label="Flow Baseline / 检查结构" tone="zinc" />
+                          </div>
+	                        <p className="mt-1 text-sm text-muted-foreground">
+                            检查结构是系统预设；内容摘要、依据边界、规则与风险由 LLM 根据输入契约生成。
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <SourceBadge label="Step 1 Rule Scope" tone={ruleScope?.source === "template" ? "violet" : "amber"} />
+                            <span>+</span>
+                            <SourceBadge label="Step 2 Precheck LLM" tone="amber" />
+                            <span>右侧内容 = 左侧输入契约 + 已确认规则范围的二次归一结果。</span>
+                          </div>
+	                      </div>
+	                      <Badge variant="outline">{precheckTrace ? `${precheckTrace.provider}` : "waiting"}</Badge>
+	                    </div>
                     <WarningCallout>
                       {activeRun?.precheckRun.warning ?? "LLM 会按基线结构拆解输入；确认前不能进入生成。"}
                     </WarningCallout>
                     {activeRun ? (
                       <div className="mt-3 flex flex-col gap-3">
-                        <InfoRow label="内容摘要" value={activeRun.precheckRun.contentBrief} />
-                        <InfoRow label="依据边界" value={activeRun.precheckRun.groundingBrief} />
-                        <details className="rounded-lg border bg-zinc-50 p-3 text-sm">
-                          <summary className="cursor-pointer font-medium">规则与风险</summary>
-                          <div className="mt-3 flex flex-col gap-2">
-                            {activeRun.precheckRun.writingRulesCandidate.slice(0, 5).map((rule, index) => (
-                              <div key={`${rule}-${index}`} className="rounded-md border bg-white p-2">{rule}</div>
-                            ))}
+                          <div className="flex flex-wrap gap-2">
+                            <SourceBadge label="以下内容：LLM Generated / 模型生成" tone="amber" />
                           </div>
-                        </details>
+	                        <InfoRow label="内容摘要" value={activeRun.precheckRun.contentBrief} />
+	                        <InfoRow label="依据边界" value={activeRun.precheckRun.groundingBrief} />
+                          <SourceCoveragePanel run={activeRun} ruleScope={ruleScope} />
+	                        <details className="rounded-lg border bg-zinc-50 p-3 text-sm">
+	                          <summary className="cursor-pointer font-medium">LLM 建议规则与风险</summary>
+	                          <div className="mt-3 flex flex-col gap-2">
+	                            {activeRun.precheckRun.writingRulesCandidate.slice(0, 5).map((rule, index) => (
+	                              <div key={`${rule}-${index}`} className="rounded-md border border-amber-100 bg-amber-50/40 p-2">
+                                  <SourceBadge label="Precheck LLM / 待确认" tone="amber" />
+                                  <div className="mt-2">{rule}</div>
+                                </div>
+	                            ))}
+	                          </div>
+	                        </details>
                       </div>
                     ) : null}
                   </div>
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="ab" className="m-0 min-h-0 flex-1 overflow-hidden">
+                <ScrollArea className="h-full">
+                  <RuleScopeABPreview activeRun={activeRun} ruleScope={ruleScope} />
                 </ScrollArea>
               </TabsContent>
 
@@ -1966,6 +2610,7 @@ function LinearEditor({
               selectedDraft={selectedDraft}
               selectedIndex={selectedDraftIndex}
               bestDraftIndex={bestDraftIndex}
+              evalResults={activeRun?.evalRun?.candidateResults ?? []}
               feedback={activeRun?.feedback ?? []}
               onSelectCandidate={onSelectCandidate}
               onFeedback={onRecordFeedback}
@@ -1991,6 +2636,10 @@ function LinearEditor({
             onSelectCandidate={onSelectFinalCandidate}
             onBack={onBackToReview}
             onExportDoc={onExportDoc}
+            rulePackageDraft={rulePackageDraft}
+            rulePackageTask={rulePackageTask}
+            onCreateRulePackageDraft={onCreateRulePackageDraft}
+            onPublishRulePackage={onPublishRulePackage}
           />
         </section>
       </EditorStageShell>
@@ -2025,6 +2674,99 @@ function EditorStageShell({
   );
 }
 
+function RuleScopeABPreview({
+  activeRun,
+  ruleScope,
+}: {
+  activeRun: WritingRunRecord | null;
+  ruleScope: WritingRuleScopeRecord | null;
+}) {
+  const columns = buildRuleScopeComparison({
+    ruleScope,
+    precheckRun: activeRun?.precheckRun,
+  });
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold">规则 A/B 对照</h3>
+          <SourceBadge label="Derived Preview / 由当前任务派生" tone="zinc" />
+        </div>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          这里不重新生成正文，只解释同一 Job Spec 下“是否应用 Rule Scope”会改变哪些生成约束和评分归因。
+        </p>
+      </div>
+
+      <div className="grid gap-3">
+        {columns.map((column) => (
+          <section key={column.title} className="rounded-lg border bg-white p-3">
+            <div className="flex items-start justify-between gap-3">
+              <h4 className="text-sm font-semibold">{column.title}</h4>
+              {column.badge}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-muted-foreground">{column.summary}</p>
+            <ul className="mt-3 space-y-2 text-xs leading-5">
+              {column.bullets.map((bullet) => (
+                <li key={bullet} className="flex gap-2 rounded-md border bg-zinc-50 px-2 py-2">
+                  <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-zinc-500" />
+                  <span className="min-w-0 break-words [overflow-wrap:anywhere]">{bullet}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+
+      <WarningCallout title="使用边界">
+        A/B 对照用于判断规则是否值得进入本轮生成契约；真正的正文差异仍需要点击“生成候选”或运行下一批后在候选评审区比较。
+      </WarningCallout>
+    </div>
+  );
+}
+
+function SourceCoveragePanel({
+  run,
+  ruleScope,
+}: {
+  run: WritingRunRecord;
+  ruleScope: WritingRuleScopeRecord | null;
+}) {
+  const coverage = buildSourceCoverage(run, ruleScope);
+  const imitationRisk =
+    (run.referencePaste ?? ruleScope?.referencePaste ?? "").trim().length > 0
+      ? "已提供参考文本：需要检查是否只抽象规则、没有复制句式。"
+      : "未提供参考文本：过度仿写风险低，但专属风格覆盖不足。";
+
+  return (
+    <section className="rounded-lg border bg-white p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h4 className="text-sm font-semibold">来源覆盖与发布风险</h4>
+        <SourceBadge label="Risk Gate / 发布前检查" tone="zinc" />
+      </div>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        这里检查规则来源是否可追溯；高风险不会阻断生成候选，但会阻断沉淀为 Rule Package。
+      </p>
+      <div className="mt-3 grid gap-2">
+        {coverage.map((item) => {
+          const tone = item.status === "covered" ? "emerald" : item.status === "risk" ? "amber" : "zinc";
+          const label = item.status === "covered" ? "covered" : item.status === "risk" ? "risk" : "missing";
+          return (
+            <div key={item.label} className="rounded-md border bg-zinc-50 p-2">
+              <div className="flex items-start justify-between gap-2">
+                <span className="text-xs font-semibold">{item.label}</span>
+                <SourceBadge label={label} tone={tone} />
+              </div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.detail}</p>
+            </div>
+          );
+        })}
+      </div>
+      <WarningCallout title="过度仿写检查">{imitationRisk}</WarningCallout>
+    </section>
+  );
+}
+
 function LinearInspector({
   activeRun,
   selectedDraft,
@@ -2049,26 +2791,65 @@ function LinearInspector({
   onDeleteFeedback: (feedbackId: string) => void;
 }) {
   const [inspectorTab, setInspectorTab] = useState("summary");
-  const diagnosticsHref = activeRun ? frameworkDiagnosticsHref(activeRun, stage, selectedDraft) : "/framework";
   const traceCount = activeRun?.llmTraces?.length ?? 0;
   const langfuseTraceCount = activeRun?.llmTraces?.filter((trace) => trace.langfuseTraceId).length ?? 0;
   const fullPayloadCount =
     activeRun?.llmTraces?.filter((trace) => trace.inputPayload !== undefined && trace.outputPayload !== undefined).length ?? 0;
-  const recentTraces = (activeRun?.llmTraces ?? []).slice().reverse().slice(0, 5);
+  const allTraces = (activeRun?.llmTraces ?? []).slice().reverse();
+  const stageTraces = allTraces.filter((trace) => traceStage(trace.nodeType) === stage);
+  const visibleTraces = (stageTraces.length ? stageTraces : allTraces).slice(0, 5);
+  const traceScopeLabel = stageTraces.length ? stageCopy[stage].nextTitle : "全部调用";
+  const ruleSourceLabel = activeRun?.ruleScope
+    ? `${ruleScopeSourceLabel[activeRun.ruleScope.source]} / ${activeRun.ruleScope.items.length} 条`
+    : "未生成";
+  const hasRuleScope = Boolean(activeRun?.ruleScope?.items.length);
+  const hasCandidates = Boolean(activeRun?.candidates.length);
+  const hasUnprocessedFeedback = Boolean(activeRun?.feedback.some((item) => item.status === "unprocessed"));
+  const nextAction =
+    stage === "intake"
+      ? {
+          title: hasRuleScope ? "进入生成前检查" : "生成规则范围",
+          reason: hasRuleScope
+            ? "规则范围已生成，可以确认并进入检查。"
+            : "当前任务还没有规则范围，先让模型从输入中拆出临时规则。",
+          cta: "打开输入",
+          target: "intake" as FlowStage,
+        }
+      : stage === "precheck"
+        ? {
+            title: hasCandidates ? "查看候选评审" : "生成候选",
+            reason: hasCandidates
+              ? "当前任务已有候选，下一步应进入评审。"
+              : "检查契约已就绪，下一步生成候选文本。",
+            cta: hasCandidates ? "打开评审" : "打开检查",
+            target: hasCandidates ? ("review" as FlowStage) : ("precheck" as FlowStage),
+          }
+        : stage === "review"
+          ? {
+              title: hasUnprocessedFeedback ? "处理反馈队列" : "继续评审或进入定稿",
+              reason: hasUnprocessedFeedback
+                ? "已有未处理反馈，应先决定是否进入下一轮规则草稿。"
+                : "当前没有未处理反馈，可以继续选择候选或进入定稿。",
+              cta: "打开评审",
+              target: "review" as FlowStage,
+            }
+          : {
+              title: "导出定稿",
+              reason: "已进入定稿阶段，确认候选后导出本次文本产物。",
+              cta: "打开定稿",
+              target: "finalize" as FlowStage,
+            };
 
   return (
 	    <aside className="flex h-full min-h-0 flex-col bg-[#fbfaf6]">
-	      <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
-	        <div className="min-w-0">
-	          <div className="text-sm font-semibold">上下文面板</div>
-	          <div className="mt-1 truncate text-xs text-muted-foreground">
-	            {activeRun ? activeRun.id : "未选择任务"}
-	          </div>
-	        </div>
-          <Button asChild variant="outline" size="sm" className="h-8 shrink-0">
-            <Link href={diagnosticsHref}>观测</Link>
-          </Button>
-	      </div>
+      <div className="border-b px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">上下文面板</div>
+          <div className="mt-1 truncate text-xs text-muted-foreground">
+            {activeRun ? activeRun.id : "未选择任务"}
+          </div>
+        </div>
+      </div>
       {!activeRun ? (
         <div className="p-4">
           <div className="rounded-lg border border-dashed bg-white p-4 text-sm text-muted-foreground">
@@ -2107,40 +2888,36 @@ function LinearInspector({
 
           <TabsContent value="summary" className="m-0 min-h-0 flex-1">
             <ScrollArea className="h-full">
-              <div className="flex flex-col gap-4 p-4">
+              <div className="flex flex-col gap-3 p-4">
                 <section className="rounded-lg border bg-white p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="line-clamp-2 text-sm font-semibold">{activeRun.jobSpec.title}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{runStateLabel(activeRun)}</div>
+                  <div className="line-clamp-2 text-sm font-semibold">{activeRun.jobSpec.title}</div>
+                  <div className="mt-3 grid gap-2 text-xs">
+                    <div className="flex items-center justify-between gap-3 rounded-md border bg-zinc-50 px-2 py-1.5">
+                      <span className="text-muted-foreground">runId</span>
+                      <span className="max-w-36 truncate font-mono">{activeRun.id}</span>
                     </div>
-                    <Badge variant="outline">{activeRun.candidates.length} 个候选</Badge>
-                  </div>
-                  <div className="mt-3 grid gap-2">
-                    <Button variant="outline" size="sm" onClick={() => onStageChange("precheck")}>
-                      检查
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={!activeRun.candidates.length}
-                      onClick={() => onStageChange("review")}
-                    >
-                      评审
-                    </Button>
+                    <div className="flex items-center justify-between gap-3 rounded-md border bg-zinc-50 px-2 py-1.5">
+                      <span className="text-muted-foreground">状态</span>
+                      <Badge variant="outline">{runStateLabel(activeRun)}</Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border bg-zinc-50 px-2 py-1.5">
+                      <span className="text-muted-foreground">阶段</span>
+                      <Badge variant="secondary">{stageCopy[stage].nextTitle}</Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border bg-zinc-50 px-2 py-1.5">
+                      <span className="text-muted-foreground">候选</span>
+                      <span>{activeRun.candidates.length} 个</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border bg-zinc-50 px-2 py-1.5">
+                      <span className="text-muted-foreground">规则来源</span>
+                      <span className="max-w-36 truncate">{ruleSourceLabel}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border bg-zinc-50 px-2 py-1.5">
+                      <span className="text-muted-foreground">更新时间</span>
+                      <span>{new Date(activeRun.updatedAt).toLocaleString("zh-CN")}</span>
+                    </div>
                   </div>
                 </section>
-
-                {selectedDraft ? (
-                  <section className="rounded-lg border bg-white p-3">
-                    <div className="text-xs font-medium text-muted-foreground">已选候选</div>
-                    <div className="mt-2 line-clamp-2 text-sm font-semibold">{selectedDraft.title}</div>
-                    <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{selectedDraft.version}</span>
-                      <span>{selectedDraft.total}</span>
-                    </div>
-                  </section>
-                ) : null}
               </div>
             </ScrollArea>
           </TabsContent>
@@ -2148,7 +2925,15 @@ function LinearInspector({
           <TabsContent value="next" className="m-0 min-h-0 flex-1">
             <ScrollArea className="h-full">
               <div className="flex flex-col gap-4 p-4">
-                {stage === "review" ? (
+                <section className="rounded-lg border bg-white p-3">
+                  <div className="text-xs font-medium text-muted-foreground">推荐下一步</div>
+                  <div className="mt-2 text-sm font-semibold">{nextAction.title}</div>
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{nextAction.reason}</p>
+                  <Button className="mt-3 w-full" size="sm" disabled={runtimeBusy} onClick={() => onStageChange(nextAction.target)}>
+                    {nextAction.cta}
+                  </Button>
+                </section>
+                {stage === "review" && activeRun.feedback.some((item) => item.status === "unprocessed") ? (
                   <DecisionQueuePanel
                     run={activeRun}
                     latestGenerationRunId={latestGenerationRunId}
@@ -2157,31 +2942,7 @@ function LinearInspector({
                     onRunGenerationBatch={onRunGenerationBatch}
                     onDeleteFeedback={onDeleteFeedback}
                   />
-                ) : (
-                  <section className="rounded-lg border bg-white p-3">
-                    <div className="text-sm font-semibold">当前下一步</div>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      {stage === "intake"
-                        ? "先生成写作规则范围，再进入生成前检查。"
-                        : stage === "precheck"
-                          ? "确认检查结果后生成候选。"
-                          : "选择定稿候选并导出本次产物。"}
-                    </p>
-                    <div className="mt-3 grid gap-2">
-                      <Button variant="outline" size="sm" onClick={() => onStageChange("precheck")}>
-                        打开检查
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!activeRun.candidates.length}
-                        onClick={() => onStageChange("review")}
-                      >
-                        打开评审
-                      </Button>
-                    </div>
-                  </section>
-                )}
+                ) : null}
               </div>
             </ScrollArea>
           </TabsContent>
@@ -2190,21 +2951,25 @@ function LinearInspector({
             <ScrollArea className="h-full">
               <div className="flex flex-col gap-4 p-4">
                 <details className="rounded-lg border bg-white p-3" open>
-                  <summary className="cursor-pointer list-none">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold">Trace 状态</div>
-                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                          点击展开查看最近模型调用；完整输入输出在详情页。
-                        </p>
-                      </div>
-                      <Badge variant={traceCount > 0 ? "secondary" : "outline"}>{traceCount}</Badge>
+	                  <summary className="cursor-pointer list-none">
+	                    <div className="flex items-start justify-between gap-3">
+	                      <div>
+	                        <div className="text-sm font-semibold">Trace 状态</div>
+	                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+		                          默认只显示当前步骤相关调用；展开单条记录可看内置提示词、用户 payload 和模型输出预览。
+		                        </p>
+	                      </div>
+	                      <Badge variant={traceCount > 0 ? "secondary" : "outline"}>{traceCount}</Badge>
                     </div>
                   </summary>
-                  <div className="mt-3 grid gap-2 text-xs">
-                    <div className="flex items-center justify-between rounded-md border bg-zinc-50 px-2 py-1.5">
-                      <span>本地 trace</span>
-                      <Badge variant="secondary">{traceCount} 条</Badge>
+	                  <div className="mt-3 grid gap-2 text-xs">
+	                    <div className="flex items-center justify-between rounded-md border bg-zinc-50 px-2 py-1.5">
+	                      <span>当前范围</span>
+	                      <Badge variant="outline">{traceScopeLabel}</Badge>
+	                    </div>
+	                    <div className="flex items-center justify-between rounded-md border bg-zinc-50 px-2 py-1.5">
+	                      <span>本地 trace</span>
+	                      <Badge variant="secondary">{traceCount} 条</Badge>
                     </div>
                     <div className="flex items-center justify-between rounded-md border bg-zinc-50 px-2 py-1.5">
                       <span>完整 payload</span>
@@ -2217,29 +2982,84 @@ function LinearInspector({
                       </Badge>
                     </div>
                   </div>
-                  <div className="mt-3 space-y-2">
-                    {recentTraces.map((trace) => (
-                      <Link
-                        key={trace.id}
-                        href={frameworkDiagnosticsHref(activeRun, stage, selectedDraft, trace)}
-                        className="block rounded-md border bg-zinc-50 px-2 py-2 text-xs transition hover:border-zinc-500 hover:bg-white"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate font-medium">{trace.nodeType}</span>
-                          <Badge variant={trace.status === "complete" ? "secondary" : "destructive"}>
-                            {trace.status === "complete" ? "完成" : "失败"}
-                          </Badge>
-                        </div>
-                        <div className="mt-1 truncate text-muted-foreground">
-                          {trace.provider} / {trace.model}
-                        </div>
-                      </Link>
-                    ))}
-                    {!recentTraces.length ? (
-                      <div className="rounded-md border border-dashed bg-zinc-50 p-2 text-xs text-muted-foreground">
-                        当前任务还没有模型调用。
-                      </div>
-                    ) : null}
+	                  <div className="mt-3 space-y-2">
+		                    {visibleTraces.map((trace, index) => {
+                        const inputSections = traceInputSections(trace);
+                        const outputValue = traceOutputValue(trace);
+                        const hasFullPayload = trace.inputPayload !== undefined && trace.outputPayload !== undefined;
+                        const detailHref = frameworkDiagnosticsHref(activeRun, stage, selectedDraft, trace);
+
+                        return (
+                          <details
+                            key={trace.id}
+                            className="rounded-md border bg-zinc-50 text-xs open:bg-white"
+                            open={index === 0}
+                          >
+                            <summary className="cursor-pointer list-none px-2 py-2">
+                              <div className="flex items-start justify-between gap-2">
+	                                <div className="min-w-0">
+	                                  <div className="truncate font-medium">{traceStageLabel(trace.nodeType)} / {traceNodeLabel(trace.nodeType)}</div>
+	                                  <div className="mt-1 truncate text-muted-foreground">
+	                                    {trace.provider} / {trace.model}
+	                                  </div>
+                                </div>
+                                <div className="flex shrink-0 flex-col items-end gap-1">
+                                  <Badge variant={trace.status === "complete" ? "secondary" : "destructive"}>
+                                    {trace.status === "complete" ? "完成" : "失败"}
+                                  </Badge>
+                                  {typeof trace.latencyMs === "number" ? (
+                                    <span className="font-mono text-[11px] text-muted-foreground">{trace.latencyMs}ms</span>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                <Badge variant={hasFullPayload ? "secondary" : "outline"}>
+                                  {hasFullPayload ? "完整 payload" : "payload 缺失"}
+                                </Badge>
+                                {trace.langfuseTraceId ? <Badge variant="secondary">Langfuse</Badge> : <Badge variant="outline">本地</Badge>}
+                                <Badge variant="outline" className="font-mono">{trace.promptVersion}</Badge>
+                              </div>
+                            </summary>
+                            <div className="space-y-2 border-t px-2 py-2">
+                              <section className="rounded-md border bg-white p-2">
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <span className="font-medium">系统内置提示词</span>
+                                  <Badge variant="outline">Code Built-in</Badge>
+                                </div>
+                                <pre className="max-h-32 overflow-auto whitespace-pre-wrap rounded bg-zinc-950 p-2 font-mono text-[11px] leading-4 text-zinc-50">
+                                  {formatTracePreview(inputSections.systemPrompt, 900)}
+                                </pre>
+                              </section>
+                              <section className="rounded-md border bg-white p-2">
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <span className="font-medium">用户输入 / 组装 payload</span>
+                                  <Badge variant="outline">Request</Badge>
+                                </div>
+                                <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded bg-zinc-950 p-2 font-mono text-[11px] leading-4 text-zinc-50">
+                                  {formatTracePreview(inputSections.userPayload)}
+                                </pre>
+                              </section>
+                              <section className="rounded-md border bg-white p-2">
+                                <div className="mb-1 flex items-center justify-between gap-2">
+                                  <span className="font-medium">模型输出</span>
+                                  <Badge variant="outline">Response</Badge>
+                                </div>
+                                <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded bg-zinc-950 p-2 font-mono text-[11px] leading-4 text-zinc-50">
+                                  {formatTracePreview(outputValue)}
+                                </pre>
+                              </section>
+                              <Button asChild variant="outline" size="sm" className="w-full">
+                                <Link href={detailHref}>打开完整观测详情</Link>
+                              </Button>
+                            </div>
+                          </details>
+                        );
+                      })}
+		                    {!visibleTraces.length ? (
+		                      <div className="rounded-md border border-dashed bg-zinc-50 p-2 text-xs text-muted-foreground">
+		                        当前步骤还没有模型调用。
+	                      </div>
+	                    ) : null}
                   </div>
                 </details>
               </div>
@@ -2302,6 +3122,116 @@ function frameworkDiagnosticsHref(
   return `/framework?${params.toString()}`;
 }
 
+function traceNodeLabel(nodeType: string) {
+  const labels: Record<string, string> = {
+    scope_extraction: "Rule Scope 提炼",
+    precheck_normalization: "Precheck 归一",
+    candidate_generation: "候选生成",
+    feedback_reasoning: "反馈分析",
+    rule_patch_compilation: "规则草稿编译",
+    generation_batch: "下一批生成",
+    template_rule_scope_load: "模板规则加载",
+  };
+
+  return labels[nodeType] ?? nodeType;
+}
+
+function traceStage(nodeType: string): FlowStage {
+  if (nodeType === "scope_extraction" || nodeType === "template_rule_scope_load") {
+    return "intake";
+  }
+  if (nodeType === "precheck_normalization") {
+    return "precheck";
+  }
+  if (
+    nodeType === "candidate_generation" ||
+    nodeType === "generation_batch" ||
+    nodeType === "feedback_reasoning" ||
+    nodeType === "rule_patch_compilation"
+  ) {
+    return "review";
+  }
+
+  return "finalize";
+}
+
+function traceStageLabel(nodeType: string) {
+  return stageCopy[traceStage(nodeType)].nextTitle;
+}
+
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function traceInputSections(trace: LLMCallTraceRecord) {
+  const payload = trace.inputPayload as
+    | {
+        body?: {
+          messages?: Array<{
+            role?: string;
+            content?: unknown;
+          }>;
+        };
+      }
+    | undefined;
+  const messages = payload?.body?.messages ?? [];
+  const systemPrompt = messages.find((message) => message.role === "system")?.content ?? null;
+  const userPayload = messages.find((message) => message.role === "user")?.content ?? trace.inputPayload ?? null;
+
+  return {
+    systemPrompt,
+    userPayload: parseMaybeJson(userPayload),
+  };
+}
+
+function traceOutputValue(trace: LLMCallTraceRecord) {
+  const payload = trace.outputPayload as
+    | {
+        normalizedOutput?: unknown;
+        parsed?: unknown;
+        content?: unknown;
+        body?: {
+          choices?: Array<{
+            message?: {
+              content?: unknown;
+            };
+          }>;
+        };
+      }
+    | undefined;
+
+  return (
+    payload?.normalizedOutput ??
+    payload?.parsed ??
+    parseMaybeJson(payload?.content) ??
+    parseMaybeJson(payload?.body?.choices?.[0]?.message?.content) ??
+    trace.outputPayload ??
+    null
+  );
+}
+
+function formatTracePreview(value: unknown, maxLength = 1800) {
+  const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  if (!text) {
+    return "无 payload";
+  }
+
+  return text.length > maxLength ? `${text.slice(0, maxLength)}\n... 已截断，打开详情页查看完整 payload` : text;
+}
+
 function LinearInspectorRail({
   canExpand = true,
   onExpand,
@@ -2326,6 +3256,7 @@ function LinearInspectorRail({
 function Field({
   label,
   children,
+  badge,
   sourceKey,
   activeSource,
   onActivate,
@@ -2333,6 +3264,7 @@ function Field({
 }: {
   label: string;
   children: ReactNode;
+  badge?: ReactNode;
   sourceKey?: SourceKey;
   activeSource?: SourceKey | null;
   onActivate?: (sourceKey: SourceKey) => void;
@@ -2349,26 +3281,58 @@ function Field({
 	      onFocusCapture={() => sourceKey && onActivate?.(sourceKey)}
 	      onBlurCapture={onClear}
 	    >
-      <span className="text-sm font-medium">{label}</span>
-      {children}
-    </label>
+	      <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+          {label}
+          {badge}
+        </span>
+	      {children}
+	    </label>
   );
 }
 
 function FinalizeExportPanel({
   drafts,
   selectedCandidateId,
+  rulePackageDraft,
+  rulePackageTask,
   onSelectCandidate,
   onBack,
   onExportDoc,
+  onCreateRulePackageDraft,
+  onPublishRulePackage,
 }: {
   drafts: CandidateRecord[];
   selectedCandidateId: string;
+  rulePackageDraft: RulePackageRecord | null;
+  rulePackageTask: "draft" | "publish" | null;
   onSelectCandidate: (candidateId: string) => void;
   onBack: () => void;
   onExportDoc: (candidate: CandidateRecord) => Promise<void> | void;
+  onCreateRulePackageDraft: (candidate: CandidateRecord) => Promise<void> | void;
+  onPublishRulePackage: (rulePackage: RulePackageRecord) => Promise<void> | void;
 }) {
   const selectedDraft = drafts.find((draft) => draft.id === selectedCandidateId) ?? drafts[0];
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  useEffect(() => {
+    setCopyState("idle");
+  }, [selectedDraft?.id]);
+
+  async function copyPlainText() {
+    if (!selectedDraft) {
+      return;
+    }
+
+    const text = buildPlainTextExport(selectedDraft);
+    try {
+      await writeClipboardText(text);
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 1600);
+    } catch {
+      setCopyState("failed");
+      window.setTimeout(() => setCopyState("idle"), 2200);
+    }
+  }
 
   return (
     <div className="text-zinc-950">
@@ -2386,6 +3350,10 @@ function FinalizeExportPanel({
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" size="sm" onClick={onBack}>
               返回评审
+            </Button>
+            <Button variant="outline" size="sm" disabled={!selectedDraft} onClick={() => void copyPlainText()}>
+              <Copy className="size-4" />
+              {copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制纯文本"}
             </Button>
             <Button
               size="sm"
@@ -2410,6 +3378,64 @@ function FinalizeExportPanel({
           </p>
         </section>
 
+        <section className="rounded-lg border bg-white p-3 text-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 font-medium">
+                规则包沉淀
+                <SourceBadge label="Reusable Rule Package / 可复用" tone="violet" />
+              </div>
+              <p className="mt-1 text-muted-foreground">
+                从本轮定稿候选、Rule Scope、Precheck 和人工反馈生成草稿；发布后可在新任务的规则来源中复用。
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!selectedDraft || Boolean(rulePackageTask)}
+                onClick={() => selectedDraft && void onCreateRulePackageDraft(selectedDraft)}
+              >
+                {rulePackageTask === "draft" ? "生成中..." : rulePackageDraft ? "重新生成草稿" : "生成规则包草稿"}
+              </Button>
+              <Button
+                size="sm"
+                disabled={!rulePackageDraft || rulePackageDraft.status === "published" || Boolean(rulePackageTask)}
+                onClick={() => rulePackageDraft && void onPublishRulePackage(rulePackageDraft)}
+              >
+                {rulePackageDraft?.status === "published"
+                  ? "已发布"
+                  : rulePackageTask === "publish"
+                    ? "发布中..."
+                    : "发布并允许复用"}
+              </Button>
+            </div>
+          </div>
+          {rulePackageDraft ? (
+            <div className="mt-3 rounded-lg border bg-zinc-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{rulePackageDraft.title}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {rulePackageDraft.version} · {rulePackageDraft.rules.length} 条规则 · {rulePackageDraft.status === "published" ? "已发布" : "草稿"}
+                  </div>
+                </div>
+                <Badge variant={rulePackageDraft.status === "published" ? "secondary" : "outline"}>
+                  {rulePackageDraft.status === "published" ? "可复用" : "待发布"}
+                </Badge>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {rulePackageDraft.rules.slice(0, 4).map((rule) => (
+                  <div key={rule.id} className="rounded-md border bg-white px-3 py-2 text-xs leading-5 text-zinc-700">
+                    <span className="font-medium text-zinc-950">{rulePackageSourceLabel(rule.source)}：</span>
+                    {rule.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
         <div className="grid gap-4 lg:grid-cols-3">
           {drafts.map((draft) => {
             const active = draft.id === selectedDraft?.id;
@@ -2419,27 +3445,30 @@ function FinalizeExportPanel({
                 key={draft.id}
                 type="button"
                 className={cn(
-                  "flex min-h-64 flex-col rounded-xl border bg-white p-4 text-left shadow-sm transition",
+                  "flex min-h-0 flex-col rounded-xl border-2 bg-white p-4 text-left shadow-sm transition",
                   active
-                    ? "border-2 border-zinc-900 bg-zinc-50"
-                    : "hover:border-zinc-400 hover:bg-zinc-50/50",
+                    ? "border-zinc-900 bg-zinc-50"
+                    : "border-transparent ring-1 ring-inset ring-zinc-200 hover:border-zinc-400 hover:bg-zinc-50/50 hover:ring-transparent",
                 )}
                 onClick={() => onSelectCandidate(draft.id)}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <Badge variant={active ? "secondary" : "outline"} className="font-mono">
-                    {draft.version}
-                  </Badge>
-                  <span className="text-sm font-semibold">{draft.total}</span>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={active ? "secondary" : "outline"} className="font-mono">
+                      {draft.version}
+                    </Badge>
+                    <SourceBadge label="LLM Generated / 模型生成" tone="amber" />
+                  </div>
+                  <Badge variant="outline">待确认</Badge>
                 </div>
                 <h3 className="mt-3 line-clamp-2 break-words text-base font-semibold [overflow-wrap:anywhere]">{draft.title}</h3>
                 <p className="mt-2 line-clamp-3 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">{draft.summary}</p>
-                <div className="mt-4 flex-1 overflow-hidden rounded-lg border bg-white p-3">
-                  <p className="line-clamp-6 break-words text-sm leading-6 text-zinc-800 [overflow-wrap:anywhere]">{draft.excerpt}</p>
+                <div className="mt-3 overflow-hidden rounded-lg border bg-white p-3">
+                  <p className="line-clamp-3 break-words text-sm leading-5 text-zinc-800 [overflow-wrap:anywhere]">{draft.excerpt}</p>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span>{active ? "已选为本次定稿" : "点击选择"}</span>
-                  {active ? <CheckCircle2 className="size-4 text-zinc-900" /> : null}
+                  <CheckCircle2 className={cn("size-4", active ? "text-zinc-900 opacity-100" : "text-zinc-300 opacity-0")} />
                 </div>
               </button>
             );
@@ -2448,6 +3477,68 @@ function FinalizeExportPanel({
       </div>
     </div>
   );
+}
+
+function buildPlainTextExport(candidate: CandidateRecord) {
+  const title = stripMarkdownForPlainText(candidate.title).trim();
+  const body = stripMarkdownForPlainText(candidate.excerpt).trim();
+  if (!title) {
+    return body;
+  }
+  if (!body || body.startsWith(title)) {
+    return body || title;
+  }
+  return `${title}\n\n${body}`;
+}
+
+function rulePackageSourceLabel(source: RulePackageRecord["rules"][number]["source"]) {
+  switch (source) {
+    case "rule_scope":
+      return "Scope";
+    case "precheck":
+      return "Precheck";
+    case "feedback":
+      return "Feedback";
+    case "finalized_candidate":
+      return "定稿";
+    default:
+      return "Rule";
+  }
+}
+
+function stripMarkdownForPlainText(input: string) {
+  return input
+    .replace(/\r\n/g, "\n")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+async function writeClipboardText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textarea);
+  if (!copied) {
+    throw new Error("Clipboard copy failed");
+  }
 }
 
 function ReviewNextActionBar({
@@ -2518,6 +3609,7 @@ function CandidateWorkspace({
   selectedDraft,
   selectedIndex,
   bestDraftIndex,
+  evalResults,
   feedback,
   onSelectCandidate,
   onFeedback,
@@ -2527,6 +3619,7 @@ function CandidateWorkspace({
   selectedDraft: CandidateRecord;
   selectedIndex: number;
   bestDraftIndex: number;
+  evalResults: NonNullable<WritingRunRecord["evalRun"]>["candidateResults"];
   feedback: HumanFeedbackRecord[];
   onSelectCandidate: (candidateId: string) => void;
   onFeedback?: (feedback: HumanFeedbackInput) => Promise<void> | void;
@@ -2538,6 +3631,9 @@ function CandidateWorkspace({
   const selectedFeedbacks = feedback.filter(
     (item) => item.candidateId === selectedDraft.id && item.kind === "selection",
   );
+  const selectedEvalResult = evalResults.find((item) => item.candidateId === selectedDraft.id) ?? null;
+  const evalScore = (dimension: string) =>
+    selectedEvalResult?.attribution.find((item) => item.dimension === dimension)?.score ?? null;
 
   useEffect(() => {
     setSelectedQuote("");
@@ -2583,7 +3679,10 @@ function CandidateWorkspace({
             <div className="text-sm font-semibold">版本导航</div>
             <p className="mt-1 text-xs text-muted-foreground">卡片只负责切换，不承载全文。</p>
           </div>
-          <Badge variant="outline">{drafts.length}</Badge>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <SourceBadge label="候选来自 LLM" tone="amber" />
+            <Badge variant="outline">{drafts.length}</Badge>
+          </div>
         </div>
 
         <div className="mt-3 space-y-2">
@@ -2613,7 +3712,7 @@ function CandidateWorkspace({
                     {draft.version || `V${index + 1}`}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {draft.total}
+	                    {index === bestDraftIndex ? "推荐" : "备选"}
                   </span>
                 </div>
                 <div className="mt-2 line-clamp-2 break-words text-sm font-medium text-zinc-950 [overflow-wrap:anywhere]">
@@ -2625,7 +3724,7 @@ function CandidateWorkspace({
                       variant="secondary"
                       className={cn(active && "border border-zinc-300 bg-white text-zinc-900")}
                     >
-                      最高分
+	                      推荐
                     </Badge>
                   ) : null}
                   {selectionCount ? (
@@ -2651,17 +3750,18 @@ function CandidateWorkspace({
                 <Badge variant="secondary" className="font-mono">
                   {selectedDraft.version || `版本 ${selectedIndex + 1}`}
                 </Badge>
-                {selectedIndex === bestDraftIndex ? <Badge variant="outline">当前最高分</Badge> : null}
+                {selectedIndex === bestDraftIndex ? <Badge variant="outline">当前推荐</Badge> : null}
                 <Badge variant="outline">长文阅读器</Badge>
+                <SourceBadge label="LLM Generated / 模型生成" tone="amber" />
               </div>
               <h3 className="mt-2 line-clamp-2 break-words text-lg font-semibold [overflow-wrap:anywhere]">{selectedDraft.title}</h3>
               <p className="mt-1 line-clamp-2 break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">{selectedDraft.summary}</p>
             </div>
             <div className="flex min-w-32 items-center gap-2 rounded-lg border bg-white px-3 py-2 shadow-sm">
-              <BarChart3 className="size-4 text-muted-foreground" />
+              <CheckCircle2 className="size-4 text-muted-foreground" />
               <div>
-                <div className="text-lg font-semibold">{selectedDraft.total}</div>
-                <div className="text-xs text-muted-foreground">auto score</div>
+                <div className="text-sm font-semibold">待人工确认</div>
+                <div className="text-xs text-muted-foreground">模型自评已移入评分页</div>
               </div>
             </div>
           </div>
@@ -2670,9 +3770,10 @@ function CandidateWorkspace({
         <div className="flex flex-col gap-4 p-4">
           <section className="overflow-hidden rounded-xl border border-amber-200 bg-amber-50/25">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2">
-              <div className="flex items-center gap-2 text-sm font-semibold">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                 <BookOpenCheck className="size-4 text-amber-700" />
                 阅读区
+                <SourceBadge label="正文 / LLM Generated" tone="amber" />
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Sparkles className="size-3.5 text-amber-600" />
@@ -2774,11 +3875,17 @@ function CandidateWorkspace({
                 <ScrollArea className="h-[min(62vh,760px)] bg-white/80">
                   <div className="grid gap-3 p-4 md:grid-cols-2">
                     <div className="rounded-lg border bg-zinc-50 p-3">
-                      <div className="text-xs font-medium text-muted-foreground">Summary</div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
+                        Summary
+                        <SourceBadge label="LLM Generated" tone="amber" />
+                      </div>
                       <p className="mt-2 text-sm leading-6 text-zinc-900">{selectedDraft.summary}</p>
                     </div>
                     <div className="rounded-lg border bg-zinc-50 p-3">
-                      <div className="text-xs font-medium text-muted-foreground">Rationale</div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
+                        Rationale
+                        <SourceBadge label="LLM Generated" tone="amber" />
+                      </div>
                       <p className="mt-2 text-sm leading-6 text-zinc-900">{selectedDraft.rationale}</p>
                     </div>
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 md:col-span-2">
@@ -2796,14 +3903,14 @@ function CandidateWorkspace({
                 <ScrollArea className="h-[min(62vh,760px)] bg-zinc-50">
                   <div className="p-4">
                     <div className="mb-3 flex items-center justify-between gap-2">
-                      <div className="text-sm font-semibold">自动评分</div>
-                      <Badge variant="outline" className="bg-white">后台评分口径</Badge>
+                      <div className="text-sm font-semibold">Eval 结果</div>
+                      <Badge variant="outline" className="bg-white">独立评估节点</Badge>
                     </div>
                     <div className="grid gap-3 md:grid-cols-4">
-                      <Score label="基础质量" source="自动评分" value={selectedDraft.breakdown.quality} />
-                      <Score label="任务匹配" source="自动评分" value={selectedDraft.breakdown.fit} />
-                      <Score label="风格偏好" source="自动评分" value={selectedDraft.breakdown.style} />
-                      <Score label="风险扣分" source="自动评分" value={selectedDraft.breakdown.risk} danger />
+                      <Score label="基础质量" source="candidate_eval" value={evalScore("基础质量")} />
+                      <Score label="任务匹配" source="candidate_eval" value={evalScore("任务匹配")} />
+                      <Score label="风格偏好" source="candidate_eval" value={evalScore("风格偏好")} />
+                      <Score label="风险扣分" source="candidate_eval" value={evalScore("风险扣分")} danger />
                     </div>
                     <p className="mt-4 rounded-lg border bg-white px-3 py-2 text-xs leading-5 text-muted-foreground">
                       人工动作只保留“选中文本 + 打标签”。系统会自动归因并生成规则草稿，右侧反馈账本负责展示处理状态。
@@ -2828,7 +3935,7 @@ function Score({
 }: {
   label: string;
   source: string;
-  value: number;
+  value: number | null;
   danger?: boolean;
 }) {
   return (
@@ -2840,7 +3947,7 @@ function Score({
         </Badge>
       </div>
       <div className={cn("mt-1 text-lg font-semibold", danger && "text-destructive")}>
-        {value > 0 ? `+${value}` : value}
+        {value === null ? "待评估" : value > 0 ? `+${value}` : value}
       </div>
     </div>
   );

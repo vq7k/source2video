@@ -16,9 +16,12 @@
     "plugins": [{ "name": "next" }],
     "baseUrl": ".",
     "paths": {
+      "@doc-maker/workflow-core/*": ["../packages/workflow-core/src/*"],
+      "@doc-maker/observability/*": ["../packages/observability/src/*"],
+      "@doc-maker/writing-domain/*": ["../packages/writing-domain/src/*"],
       "@/*": ["./*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "../packages/**/*.ts", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
 }

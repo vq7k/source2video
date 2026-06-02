@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { runGenerationBatch } from "@/lib/writing-runtime";
-import type { RunGenerationBatchInput } from "@/lib/writing-run-types";
+import { runGenerationBatch } from "@doc-maker/writing-domain/runtime";
+import type { RunGenerationBatchInput } from "@doc-maker/writing-domain/types";
 
 export const runtime = "nodejs";
 

@@ -4,7 +4,7 @@ import {
   readLLMRuntimeSettings,
   saveLLMRuntimeSettings,
   toLLMRuntimeSettingsView,
-} from "@/lib/llm/settings";
+} from "@doc-maker/writing-domain/llm/settings";
 
 export const runtime = "nodejs";
 

@@ -23,6 +23,9 @@ docs/legacy/
 .idea/
 *.iml
 
+# 本地 agent/CLI 工具配置（个人环境，不共享）
+.codex/
+
 # Python（未来 src/ + nodes/ 实施时用得到）
 __pycache__/
 *.py[cod]
@@ -41,3 +44,6 @@ reports/
 .cache/
 doc-maker/ui/.writing-runs/
 doc-maker/ui/.doc-maker-runtime/
+doc-maker/ui/.test-artifacts/
+doc-maker/ui/test-results/
+doc-maker/ui/playwright-report/

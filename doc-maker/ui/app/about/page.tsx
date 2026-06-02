@@ -15,7 +15,7 @@ const flow = [
   },
   {
     title: "候选评审",
-    body: "按固定轮数生成多个候选，自动评分；人工只做选中文本和打标签。",
+    body: "按固定轮数生成多条独立候选路径，逐条 eval；人工只做选中文本和打标签。",
   },
   {
     title: "定稿导出",
@@ -102,7 +102,7 @@ export default function AboutPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm leading-6 text-amber-950 md:grid-cols-2">
-          <p>基线只支持短文本生产：300-500 中文字，约 60-90 秒口播基准。</p>
+          <p>基线只预设流程和结构，不全局预设短文、口播、TTS 或分镜内容规则。</p>
           <p>规则更新不会改写旧候选；运行下一批时才使用新的规则快照。</p>
         </CardContent>
       </Card>
