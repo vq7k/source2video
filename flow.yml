@@ -81,6 +81,10 @@ stages:
             mkdir -p "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime"
             tar xzf /tmp/source2video-deploy.tgz -C "$APP"
             rm -f /tmp/source2video-deploy.tgz
+            if [ -f "$APP/deploy.tgz" ]; then
+              tar xzf "$APP/deploy.tgz" -C "$APP"
+              rm -f "$APP/deploy.tgz"
+            fi
             cd "$APP"
 
             if [ ! -f .env ]; then
