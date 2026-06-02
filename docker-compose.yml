@@ -24,7 +24,7 @@ services:
       DOC_MAKER_RULE_PACKAGE_STORE_DIR: /data/rule-packages
       DOC_MAKER_LLM_PROVIDER: ${DOC_MAKER_LLM_PROVIDER:-openai-compatible}
       DOC_MAKER_LLM_BASE_URL: ${DOC_MAKER_LLM_BASE_URL:-https://api.deepseek.com}
-      DOC_MAKER_LLM_MODEL: ${DOC_MAKER_LLM_MODEL:-deepseek-chat}
+      DOC_MAKER_LLM_MODEL: ${DOC_MAKER_LLM_MODEL:-deepseek-v4-pro}
     volumes:
       - ./data/writing-runs:/data/writing-runs
       - ./data/rule-packages:/data/rule-packages

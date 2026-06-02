@@ -128,12 +128,13 @@ export function getLLMRuntimeSettings(): LLMRuntimeSettings {
   if (process.env.DOC_MAKER_LLM_PROVIDER && isProvider(process.env.DOC_MAKER_LLM_PROVIDER)) {
     const provider = process.env.DOC_MAKER_LLM_PROVIDER;
     const defaults = defaultsFor(provider);
-    return normalizeSettings({
+    const settings = normalizeSettings({
       provider,
       baseUrl: process.env.DOC_MAKER_LLM_BASE_URL || defaults.baseUrl,
       model: process.env.DOC_MAKER_LLM_MODEL || defaults.model,
       updatedAt: "env",
     });
+    return process.env.DOC_MAKER_LLM_MODEL ? { ...settings, modelOverrides: {} } : settings;
   }
 
   if (!existsSync(SETTINGS_PATH)) {

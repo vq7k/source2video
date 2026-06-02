@@ -39,7 +39,7 @@ REGISTRY_PASSWORD=<ACR 密码>     # 服务器未登录 ACR 时需要
 ```bash
 DOC_MAKER_LLM_PROVIDER=openai-compatible
 DOC_MAKER_LLM_BASE_URL=https://api.deepseek.com
-DOC_MAKER_LLM_MODEL=deepseek-chat
+DOC_MAKER_LLM_MODEL=deepseek-v4-pro
 DOC_MAKER_LLM_API_KEY=...
 
 # 可选 Langfuse
