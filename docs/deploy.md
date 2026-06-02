@@ -63,6 +63,7 @@ LANGFUSE_PROJECT_ID=...
 ```
 
 前两个目录保存业务 run 和 Rule Package JSON；`data/runtime` 挂载到容器 `/app/ui/.doc-maker-runtime`，保存页面里写入的 LLM runtime settings。
+目录 owner 需要是容器内 `node` 用户，也就是 uid/gid `1000:1000`；流水线部署脚本会在创建目录后执行 `chown -R 1000:1000 /opt/source2video/data`。
 
 ## Caddy site block
 
