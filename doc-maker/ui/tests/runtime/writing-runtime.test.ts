@@ -77,7 +77,9 @@ describe("writing runtime regression", () => {
     expect(generation?.executionMode).toBe("independent_candidate_paths");
     expect(generation?.candidateNodeRunIds).toHaveLength(fixture.expectedCandidateCount);
     expect(generation?.evalNodeRunIds).toHaveLength(fixture.expectedCandidateCount);
-    expect(confirmed.llmTraces?.filter((trace) => trace.nodeType === "candidate_generation")).toHaveLength(3);
+    const candidateGenerationTraces = confirmed.llmTraces?.filter((trace) => trace.nodeType === "candidate_generation") ?? [];
+    expect(candidateGenerationTraces).toHaveLength(3);
+    expect(candidateGenerationTraces.every((trace) => trace.status === "complete")).toBe(true);
     expect(confirmed.llmTraces?.filter((trace) => trace.nodeType === "candidate_eval")).toHaveLength(3);
   });
 

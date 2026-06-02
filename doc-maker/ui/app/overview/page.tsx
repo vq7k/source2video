@@ -3004,8 +3004,8 @@ function LinearInspector({
 	                                  </div>
                                 </div>
                                 <div className="flex shrink-0 flex-col items-end gap-1">
-                                  <Badge variant={trace.status === "complete" ? "secondary" : "destructive"}>
-                                    {trace.status === "complete" ? "完成" : "失败"}
+                                  <Badge variant={trace.status === "failed" ? "destructive" : "secondary"}>
+                                    {trace.status === "failed" ? "失败" : "完成"}
                                   </Badge>
                                   {typeof trace.latencyMs === "number" ? (
                                     <span className="font-mono text-[11px] text-muted-foreground">{trace.latencyMs}ms</span>

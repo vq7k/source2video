@@ -20,9 +20,9 @@ export const localJsonTraceSink: TraceSink = {
     return {
       id: localTraceId,
       at: now(),
-      status: input.status ?? "complete",
       sink: this.name,
       ...input,
+      status: input.status ?? "complete",
       nodeRunId: input.nodeRunId ?? createNodeRunId(),
     };
   },
@@ -43,9 +43,9 @@ export const langfuseTraceSink: TraceSink = {
     return {
       id: localTraceId,
       at: now(),
-      status: input.status ?? "complete",
       sink: this.name,
       ...input,
+      status: input.status ?? "complete",
       nodeRunId,
       langfuseTraceId: langfuse.traceId,
       langfuseObservationId: langfuse.observationId,
