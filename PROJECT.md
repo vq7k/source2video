@@ -13,7 +13,7 @@
 | **doc-maker** | 业务原型推进中 | Writing Production 文本生成系统，讲解文档包是默认 Output Profile | [`./doc-maker/`](./doc-maker/) |
 | video-maker | TBD | 视觉决策 + Remotion 渲染编排（可能） | — |
 | tts-maker | TBD | 音频生成（可能复用旧 harness） | — |
-| s2v-core | **不存在** | 共享框架包——抽离触发 = 第 2 个 LLM workflow 子项目开工 | [`docs/ADRs/023.md`](./docs/ADRs/023.md) |
+| s2v-framework | 启动设计中 | 仓级 LLMOps / workflow framework：NodeSpec、Trace/Score、Postgres SOT、Queue/Worker、Dataset/Experiment/Gate | [`./packages/`](./packages/) |
 
 跨仓拓扑：详 [`docs/repo-layout.md`](./docs/repo-layout.md)（s2v 决策 + astral-pipeline 数据/编排 + TTS / Remotion 外部）。
 
@@ -22,23 +22,36 @@
 ### 第 1 步：找到自己角色
 
 ```
-你的 cwd       →  你的角色
-─────────────────────────────────
-仓库根         →  Engineer（暂单角色，后续按需拆分）
-doc-maker/    →  Engineer（同上；子项目级 catch-up 见 doc-maker/CLAUDE.md）
+你的 cwd / 工作域                 →  你的角色
+────────────────────────────────────────────────────────────
+仓库根                            →  Orchestrator（项目总控）
+packages/                         →  FrameworkWorker（仓级 framework）
+doc-maker/                        →  WritingWorker（第一个业务 adapter）
+部署 / 云资源 / Caddy / flow.yml   →  InfraWorker（从仓库根启动）
+测试 / 迁移 / 备份恢复 / gate 验收 →  QAWorker（从仓库根启动）
 ```
 
-注：本项目当前为**单角色架构**（YAGNI）。后续如 doc-maker / video-maker / tts-maker 业务并发推进，可按需拆分 Worker（参考 `from-fullstack-to-ai` 项目 5 角色模型）。
+注：本项目已从单 `Engineer` 升级为**持久 Agent team**。常驻 Worker 有独立 SOUL / STATUS / TODO / sessions；一次性调研仍用临时 SubAgent，不创建身份。
+
+### 角色状态目录
+
+| 角色 | 启动 cwd | 专属状态目录 | 代码工作域 |
+|---|---|---|---|
+| Orchestrator | 仓库根 | `.agents/` | `PROJECT.md`、ADR、计划、派活、验收 |
+| FrameworkWorker | `packages/` | `packages/.agents/framework/` | `packages/workflow-core`、`packages/framework-store`、`packages/framework-runtime`、`packages/observability`、`packages/artifact-store` |
+| WritingWorker | `doc-maker/` | `doc-maker/.agents/writing/` | `doc-maker/ui`、`doc-maker/packages/writing-domain`、Writing adapter |
+| InfraWorker | 仓库根 | `.agents/workers/infra/` | `docker-compose.yml`、`flow.yml`、`docs/deploy.md`、阿里云 / PG / OSS / Caddy |
+| QAWorker | 仓库根 | `.agents/workers/qa/` | e2e、migration、backup/restore、release gate 验收 |
 
 ### 第 2 步：catch-up（必跑，4 sub-step）
 
-1. **读 `.agents/SOUL.md`**——你是谁、做什么、**不**做什么、边界
-2. **读 `.agents/STATUS.md`**——当前状态 + 上次 session 留下什么 + **「当前 actionable」段**
-3. **读 `.agents/TODO.md`**——任务清单
+1. **读你的专属 `SOUL.md`**——你是谁、做什么、**不**做什么、边界
+2. **读你的专属 `STATUS.md`**——当前状态 + 上次 session 留下什么 + **「当前 actionable」段**
+3. **读你的专属 `TODO.md`**——任务清单
 4. **必自报**（强制输出，不许跳过）：
 
 ```
-我是 Engineer（cwd = <path>）。
+我是 <角色>（cwd = <path>）。
 我不做：
 1. <SOUL "我不做" 第 1 条 — 替代路径>
 2. <SOUL "我不做" 第 2 条 — 替代路径>
@@ -63,9 +76,11 @@ doc-maker/    →  Engineer（同上；子项目级 catch-up 见 doc-maker/CLAUD
 | 你想做 | 去 |
 |---|---|
 | 理解项目身份 | 本文件 `PROJECT.md` |
-| 理解我是谁（角色） | `.agents/SOUL.md` |
-| 当前状态 / 上次 session 留下什么 | `.agents/STATUS.md` |
-| 我该做什么 | `.agents/TODO.md` |
+| 理解我是谁（角色） | 按角色状态目录读专属 `SOUL.md`；Orchestrator 为 `.agents/SOUL.md` |
+| 当前状态 / 上次 session 留下什么 | 按角色状态目录读专属 `STATUS.md`；Orchestrator 为 `.agents/STATUS.md` |
+| 我该做什么 | 按角色状态目录读专属 `TODO.md`；Orchestrator 为 `.agents/TODO.md` |
+| 委派 Worker | `.skill/delegate-worker/SKILL.md` |
+| Worker 回报 | `.skill/worker-summary/SKILL.md` |
 | 跨 session 踩坑 | `.agents/learned-rules.md` |
 | 仓级 ADR（正式决策） | `docs/ADRs/` |
 | session 级临时决策草稿 | `.agents/decisions/` |

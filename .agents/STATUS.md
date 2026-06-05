@@ -2,17 +2,21 @@
 
 ## 当前 actionable
 
-**无明示 actionable，等 user 拍板下一步**。候选：
-
-1. 继续推进 v1 后 backlog：Rule Scope A/B、dataset draft、发布治理或业务 UI 打磨。
-2. video-maker / tts-maker 启动设计。
-3. s2v-core 抽离决断：ADR-023 触发条件 = 第 2 个 LLM workflow 子项目开工；当前未触发。
-
-**catch-up 后必升级**：当前无明确 actionable，agent 必问 user "现在该做什么"，不允许自行选择或默认关 session。
+**明确下一步**：持久 Agent team 已初始化；下一步由 Orchestrator 派 FrameworkWorker 执行 `docs/superpowers/plans/2026-06-05-framework-data-plane-plan.md` 的 **Task 0: Package Topology Split**，先把通用 framework packages 固定到仓库根 `packages/`，再进入 contracts / Postgres SOT。
 
 ## 当前阶段
 
-**doc-maker Writing Production v1 已上线并完成线上闭环验收**（2026-06-05）。
+**持久 Agent team 初始化完成；doc-maker Writing Production v1 已上线并完成线上闭环验收**（2026-06-05）。
+
+Agent team：
+
+- Orchestrator：仓库根 `.agents/`
+- FrameworkWorker：`packages/.agents/framework/`
+- WritingWorker：`doc-maker/.agents/writing/`
+- InfraWorker：`.agents/workers/infra/`
+- QAWorker：`.agents/workers/qa/`
+
+上一产品状态：
 
 - 公网入口：`https://s2v.x-lin7.com`
 - 默认入口：`/` 重定向/进入 `/writing`
@@ -26,7 +30,9 @@
 
 ## 最近一次 session
 
-**2026-06-05 Writing Production v1 上线验收**：本地测试/构建通过后 push CodeUp `main`，云效流水线 `8` 成功；修复生产 Caddy 缺失 `s2v.x-lin7.com` site block 导致的公网 TLS 握手失败；线上 health、页面、LLM runtime、业务 run、Langfuse/ScoreSink、framework 深链均验收通过。
+**2026-06-05 持久 Agent team 初始化**：将项目从单 Orchestrator/Engineer 运行方式升级为持久 Agent team；新增 FrameworkWorker / WritingWorker / InfraWorker / QAWorker 的专属 SOUL / STATUS / TODO / sessions 启动路径；明确 framework 归属仓库根 `packages/`，Writing 仅作为第一个业务 adapter。
+
+上一 session：**2026-06-05 Writing Production v1 上线验收**：本地测试/构建通过后 push CodeUp `main`，云效流水线 `8` 成功；修复生产 Caddy 缺失 `s2v.x-lin7.com` site block 导致的公网 TLS 握手失败；线上 health、页面、LLM runtime、业务 run、Langfuse/ScoreSink、framework 深链均验收通过。
 
 归档：[`sessions/2026-06-05-writing-production-online/`](./sessions/2026-06-05-writing-production-online/)
 
