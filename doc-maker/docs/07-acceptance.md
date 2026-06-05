@@ -16,23 +16,37 @@
 
 > doc-maker 是把混乱素材、参考写法和评审偏好转成可批量生成、可评分、可迭代沉淀的文本生产系统。
 
-当前验收只看产品路径是否自洽：
+### v1 闭环 DoD（当前完成口径）
+
+当前“完成闭环”只声明下列 v1 主路径成立，不等同于完整 Writing Production 全部 backlog 完成：
+
+| # | 闭环 | 证明 |
+|---|---|---|
+| 1 | `/writing` 生成闭环：输入 → 3 条独立候选 → 自动 eval → 定稿 | `doc-maker/ui/tests/e2e/writing-l1.spec.ts` |
+| 2 | `/writing` 反馈闭环：反馈方向 + 补充要求 → Feedback Ledger → Rule Patch → 下一轮候选 | `writing-l1.spec.ts` 的 “再来一轮” 路径 |
+| 3 | `/writing` 规则资产闭环：定稿 → Rule Package 草稿 → 发布为可复用规则包 | `writing-l1.spec.ts` 的 Rule Package 路径 |
+| 4 | `/framework` 观测闭环：L1 入口携带 `runId / candidateId / nodeRunId / traceId / returnTo`，trace 深链能反推 nodeRunId，返回 L1 不丢当前主题 | `framework-trace.spec.ts` + `writing-l1.spec.ts` |
+| 5 | runtime 回归闭环：候选保留、下一轮生成、定稿、workflow-core 投影 | `doc-maker/ui/tests/runtime/writing-runtime.test.ts` |
+
+### 完整产品验收清单（v1 后继续推进）
+
+下表是 Writing Production 的完整产品验收 backlog。未进入 v1 DoD 的条目不得反向否定 v1 主路径闭环。
 
 | # | 判据 | 说明 |
 |---|---|---|
 | 1 | L1 首页明确以 Writing Job 为单位 | 不要求用户理解节点、prompt、schema、trace |
 | 2 | Job Spec 有四类输入 | 目标、底稿、写法参考、评审偏好 |
-| 3 | Output Contract 明确短文本边界 | baseline 为 300-500 中文字、约 60-90 秒口播基准 |
+| 3 | Output Contract 默认不预设内容规则 | baseline 字段为空；字数、口播、TTS 或分镜规则只能来自用户确认、模板复用或 Precheck LLM 待确认建议 |
 | 4 | Precheck 必须产出四块 | Content Brief、Writing Rules Candidate、Eval Profile、Risk List |
 | 5 | 第一轮 Eval Profile 非空 | 系统自动生成基础质量、任务匹配、风格偏好、风险扣分规则 |
 | 6 | 确认 Precheck 后才生成 | 风险未确认时不能直接进入批量 Draft |
-| 7 | 一次生成多篇候选 | 默认 3 个版本，每篇展示自动总分、score breakdown 和理由 |
+| 7 | 一次生成多条候选路径 | 默认 3 条独立 `candidate_generation`，每条完成后进入独立 `candidate_eval`，评分来自 eval 节点而非生成节点 |
 | 8 | 人工反馈最小化 | 阅读区选中文本打标签，自动进入 Feedback Ledger 和 Rule Patch |
 | 9 | 风险可见 | 相似表达、事实漂移、证据缺口、偏好冲突必须展示 |
 | 10 | 规则容量有上限 | Rule Patch draft 最多 5 条，Active Rule Snapshot 最多 10 条规则 |
 | 11 | 更新规则与重跑解耦 | 反馈只生成规则草稿；点击“运行下一批”才生成新候选，旧候选冻结 |
 | 12 | 定稿导出独立 | 评审候选区不导出，Finalize Export 只负责选择最终 Text Artifact |
-| 13 | Rule-to-Skill Package 生命周期明确 | Writing Rules Candidate 只作为规则候选；当前 baseline 不发布 Skill Package |
+| 13 | Rule Package 生命周期明确 | Writing Rules Candidate 只作为规则候选；当前 baseline 不发布 Skill Package |
 | 14 | 技术导出降级为高级动作 | Codex/Claude `SKILL.md` 不出现在普通编辑流程 |
 | 15 | 初始化层保持轻量 | 已实现 Manual Rule Scope：Quick Intake + Reference Paste -> Writing Rule Scope；不做 Source Store / RAG |
 | 16 | 框架层记录可读取 | Run record 写入 `FrameworkNodeRunRecord`：scope extraction、precheck normalization、candidate generation/eval、feedback compilation |
@@ -49,6 +63,13 @@
 | 27 | Trace 深链能定位上下文 | 带 `traceId` 进入 `/framework` 时，必须反推选中对应 `nodeRunId` 并优先展示该 call 的输入输出 |
 | 28 | 候选深链能定位候选 | 带 `candidateId` 进入 `/framework` 时，候选列表必须置顶并标记当前候选；返回 L1 时保持原候选 |
 | 29 | Framework 响应式不裁剪主线 | 窄屏时 Run Picker 和 Trace Inspector 可折叠/下移，中央 Node Lens 不应被侧栏压缩到不可读 |
+| 30 | Rule Scope 支持 A/B 对照 | 同一 Job Spec 下展示“应用规则 / 不应用规则”的约束差异，用于判断规则是否值得进入生成契约 |
+| 31 | Rule Package / Skill Package 命名清晰 | 发布前只叫 Rule Scope / Rule Package；只有含 `SKILL.md + resources + scripts + tests` 的技术包才叫 Skill Package |
+| 32 | 来源覆盖与过度仿写风险可见 | Scope / Precheck 必须展示来源覆盖率、未覆盖来源和过度仿写风险；高风险阻断发布 |
+| 33 | 历史反馈可沉淀为 dataset draft | Job Spec、Rule Snapshot、候选、选中片段、反馈标签和最终选择结果可形成草稿，入正式 dataset 前需人工确认 |
+| 34 | 当前不做重输入/编排平台 | Source Store、RAG、workflow builder 不进入当前 L1 验收路径 |
+| 35 | Rule Scope 草稿必须入库 | 点击“生成规则范围”成功后创建 `Draft Job`，刷新后仍能在草稿列表恢复 |
+| 36 | Draft trace 必须可关联 | Scope extraction trace 必须带 `runId / nodeRunId`，不能只成为 adhoc Langfuse trace |
 
 下文 §-1 保留讲解文档包业务原型验收。它仍作为默认 Output Profile 存在，但不再锁死当前产品本质。
 

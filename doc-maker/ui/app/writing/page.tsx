@@ -31,9 +31,11 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   compileWritingRulePatch,
   confirmWritingRun,
+  createRulePackageDraft,
   createWritingRunRecord,
   finalizeWritingRunRecord,
   listWritingRuns,
+  publishRulePackageDraft,
   recordWritingFeedback,
   recordWritingTopicContext,
   runWritingGenerationBatch,
@@ -46,8 +48,10 @@ import type {
   CandidateRecord,
   CreateWritingRunInput,
   HumanFeedbackInput,
+  RulePackageRecord,
   WritingRunRecord,
 } from "@doc-maker/writing-domain/types";
+import type { LLMCallTraceRecord } from "@doc-maker/writing-domain/framework-run-types";
 import { cn } from "@/lib/utils";
 
 const BASELINE_SKILL_PACKAGE: CreateWritingRunInput["skillPackage"] = {
@@ -237,6 +241,96 @@ function candidateSignal(run: WritingRunRecord, candidate: CandidateRecord) {
   return evalResult?.strongestSignal || candidate.summary || "可展开阅读全文";
 }
 
+function traceCalls(run: WritingRunRecord) {
+  const calls = new Map<string, LLMCallTraceRecord>();
+
+  for (const call of run.llmTraces ?? []) {
+    calls.set(call.id, call);
+  }
+
+  for (const call of run.frameworkRuns?.flatMap((node) => node.llmCalls ?? []) ?? []) {
+    calls.set(call.id, call);
+  }
+
+  return Array.from(calls.values()).sort((left, right) => left.at.localeCompare(right.at));
+}
+
+function traceCandidateId(call: LLMCallTraceRecord) {
+  const value = call.metadata?.candidateId;
+  return typeof value === "string" ? value : null;
+}
+
+function traceForCandidate(run: WritingRunRecord, candidate: CandidateRecord) {
+  const calls = traceCalls(run).filter((call) => traceCandidateId(call) === candidate.id);
+  return (
+    calls.find((call) => call.nodeType === "candidate_eval" && call.metadata?.scoreSinkStatus) ??
+    calls.find((call) => call.nodeType === "candidate_eval") ??
+    calls.find((call) => call.nodeType === "candidate_generation") ??
+    null
+  );
+}
+
+function nodeForTrace(run: WritingRunRecord, trace: LLMCallTraceRecord | null) {
+  const nodes = run.frameworkRuns ?? [];
+  if (!trace) {
+    return null;
+  }
+
+  return (
+    (trace.nodeRunId ? nodes.find((node) => node.id === trace.nodeRunId) : null) ??
+    nodes.find((node) => node.llmCalls?.some((call) => call.id === trace.id)) ??
+    null
+  );
+}
+
+function nodeForCandidate(run: WritingRunRecord, candidate: CandidateRecord) {
+  const trace = traceForCandidate(run, candidate);
+  return (
+    nodeForTrace(run, trace) ??
+    (run.frameworkRuns ?? []).find(
+      (node) =>
+        node.nodeType === "candidate_generation" &&
+        node.artifacts.some((artifact) => artifact.id === candidate.id),
+    ) ??
+    null
+  );
+}
+
+function frameworkDiagnosticsHref(run: WritingRunRecord, candidate: CandidateRecord) {
+  const params = new URLSearchParams({ runId: run.id, candidateId: candidate.id });
+  const returnParams = new URLSearchParams({ runId: run.id, stage: "result", candidateId: candidate.id });
+  const trace = traceForCandidate(run, candidate);
+  const node = trace ? nodeForTrace(run, trace) : nodeForCandidate(run, candidate);
+
+  if (candidate.round) {
+    params.set("round", candidate.round.toString());
+    returnParams.set("round", candidate.round.toString());
+  }
+  if (trace?.id) {
+    params.set("traceId", trace.id);
+  }
+  if (node) {
+    params.set("nodeRunId", node.id);
+  }
+
+  params.set("returnTo", `/writing?${returnParams.toString()}`);
+
+  return `/framework?${params.toString()}`;
+}
+
+function readWritingDeepLinkParams() {
+  const params = new URLSearchParams(window.location.search);
+  const runId = params.get("runId")?.trim() || null;
+  const candidateId = params.get("candidateId")?.trim() || null;
+  const requestedRound = Number(params.get("round") ?? "");
+
+  return {
+    runId,
+    candidateId,
+    round: Number.isFinite(requestedRound) && requestedRound > 0 ? requestedRound : null,
+  };
+}
+
 function uniqueRunIds(ids: string[]) {
   return Array.from(new Set(ids.filter((id) => typeof id === "string" && id.trim().length > 0)));
 }
@@ -300,6 +394,7 @@ export default function LightweightWritingWorkbenchPage() {
   const [error, setError] = useState<string | null>(null);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [rulePackageTask, setRulePackageTask] = useState<"draft" | "publish" | null>(null);
   const streamTimersRef = useRef<number[]>([]);
   const initialLoadStartedRef = useRef(false);
   const currentTopicIdsLoadedRef = useRef(false);
@@ -313,6 +408,9 @@ export default function LightweightWritingWorkbenchPage() {
       setRuns(nextRuns);
 
       const knownRunIds = new Set(nextRuns.map((run) => run.id));
+      const requested = readWritingDeepLinkParams();
+      const requestedRun = requested.runId ? nextRuns.find((run) => run.id === requested.runId) ?? null : null;
+      const requestedCandidate = requestedRun?.candidates.find((candidate) => candidate.id === requested.candidateId) ?? null;
       const shouldRestoreCurrentTopics = shouldRestoreCurrentTopicsFromStorage();
       if (!shouldRestoreCurrentTopics) {
         clearStoredTopicIds(window.sessionStorage);
@@ -332,17 +430,20 @@ export default function LightweightWritingWorkbenchPage() {
       const nextCurrentTopicIds = uniqueRunIds([...storedTopicIds, ...legacyTopicIds]).filter((id) =>
         knownRunIds.has(id),
       );
+      const requestedTopicIds = requestedRun ? [requestedRun.id] : [];
+      const nextVisibleTopicIds = uniqueRunIds([...requestedTopicIds, ...nextCurrentTopicIds]);
+      const nextSelectedRound = requestedCandidate?.round ?? requested.round ?? null;
 
       window.localStorage.removeItem(L1_LEGACY_ACTIVE_SESSION_STORAGE_KEY);
       window.localStorage.removeItem(L1_LEGACY_LAST_SESSION_STORAGE_KEY);
       window.sessionStorage.removeItem(L1_LEGACY_CURRENT_TOPIC_IDS_STORAGE_KEY);
       window.sessionStorage.removeItem(L1_LEGACY_OLD_TOPIC_IDS_STORAGE_KEY);
-      setCurrentTopicIds(nextCurrentTopicIds);
+      setCurrentTopicIds(nextVisibleTopicIds);
       setActiveTopicId((current) =>
-        current && nextCurrentTopicIds.includes(current) ? current : nextCurrentTopicIds[0] ?? null,
+        requestedRun?.id ?? (current && nextVisibleTopicIds.includes(current) ? current : nextVisibleTopicIds[0] ?? null),
       );
-      setSelectedRound(null);
-      setExpandedCandidateId(null);
+      setSelectedRound(nextSelectedRound);
+      setExpandedCandidateId(requestedCandidate ? requestedCandidate.id : null);
       setSupplementContext("");
       currentTopicIdsLoadedRef.current = true;
     } catch (reason) {
@@ -603,6 +704,42 @@ export default function LightweightWritingWorkbenchPage() {
     }
   }
 
+  async function createRulePackageForTopic(candidate: CandidateRecord) {
+    if (!activeTopic) {
+      setError("当前主题还没有可沉淀的版本。");
+      return;
+    }
+
+    setRulePackageTask("draft");
+    setError(null);
+    try {
+      const result = await createRulePackageDraft(activeTopic.id, { candidateId: candidate.id });
+      upsertRun(result.run);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "规则包草稿生成失败");
+    } finally {
+      setRulePackageTask(null);
+    }
+  }
+
+  async function publishRulePackageForTopic(rulePackage: RulePackageRecord) {
+    if (!activeTopic) {
+      setError("当前主题还没有可发布的规则包。");
+      return;
+    }
+
+    setRulePackageTask("publish");
+    setError(null);
+    try {
+      const result = await publishRulePackageDraft(activeTopic.id, { packageId: rulePackage.id });
+      upsertRun(result.run);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "规则包发布失败");
+    } finally {
+      setRulePackageTask(null);
+    }
+  }
+
   async function copyCandidate(candidate: CandidateRecord) {
     const ok = await copyTextSafely(candidate.excerpt);
     if (ok) {
@@ -636,7 +773,7 @@ export default function LightweightWritingWorkbenchPage() {
           >
             <Link href="/overview">全貌</Link>
           </Button>
-          {activeTopic ? (
+          {activeTopic?.recommendedCandidate ? (
             <Button
               asChild
               variant="ghost"
@@ -645,7 +782,7 @@ export default function LightweightWritingWorkbenchPage() {
               title="查看调用细节"
               aria-label="打开调用细节"
             >
-              <Link href={`/framework?runId=${activeTopic.id}`}>观测</Link>
+              <Link href={frameworkDiagnosticsHref(activeTopic.run, activeTopic.recommendedCandidate)}>观测</Link>
             </Button>
           ) : (
             <Button
@@ -927,7 +1064,10 @@ export default function LightweightWritingWorkbenchPage() {
                 onToggleCandidate={setExpandedCandidateId}
                 onCopyCandidate={copyCandidate}
                 onFinalize={finalizeTopic}
+                onCreateRulePackageDraft={createRulePackageForTopic}
+                onPublishRulePackage={publishRulePackageForTopic}
                 onRefine={continueTopic}
+                rulePackageTask={rulePackageTask}
                 feedbackDirection={feedbackDirection}
                 onFeedbackDirectionChange={setFeedbackDirection}
                 onSelectRound={setSelectedRound}
@@ -955,7 +1095,10 @@ function TopicResult({
   onToggleCandidate,
   onCopyCandidate,
   onFinalize,
+  onCreateRulePackageDraft,
+  onPublishRulePackage,
   onRefine,
+  rulePackageTask,
   onFeedbackDirectionChange,
   onSelectRound,
   onSupplementContextChange,
@@ -973,7 +1116,10 @@ function TopicResult({
   onToggleCandidate: (candidateId: string | null) => void;
   onCopyCandidate: (candidate: CandidateRecord) => void;
   onFinalize: (candidate: CandidateRecord) => void;
+  onCreateRulePackageDraft: (candidate: CandidateRecord) => void;
+  onPublishRulePackage: (rulePackage: RulePackageRecord) => void;
   onRefine: () => void;
+  rulePackageTask: "draft" | "publish" | null;
   onFeedbackDirectionChange: (direction: SelectedFeedbackDirection) => void;
   onSelectRound: (round: number | null) => void;
   onSupplementContextChange: (value: string) => void;
@@ -996,6 +1142,7 @@ function TopicResult({
   const recommendedScore = candidateScore(topic.run, recommended);
   const recommendedTone = candidateTone(topic.run, recommended);
   const showRoundCue = topic.roundCount >= 5 && !roundCueDismissed;
+  const latestRulePackage = topic.run.rulePackages?.[0] ?? null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -1162,6 +1309,16 @@ function TopicResult({
               {copied ? "已复制" : "复制文本"}
             </Button>
           </div>
+          {topicFinalized ? (
+            <RulePackageActions
+              candidate={recommended}
+              rulePackage={latestRulePackage}
+              busy={busy || Boolean(rulePackageTask)}
+              task={rulePackageTask}
+              onCreateDraft={onCreateRulePackageDraft}
+              onPublish={onPublishRulePackage}
+            />
+          ) : null}
         </CardFooter>
       </Card>
 
@@ -1220,6 +1377,85 @@ function TopicResult({
         </Card>
       ) : null}
     </div>
+  );
+}
+
+function RulePackageActions({
+  candidate,
+  rulePackage,
+  busy,
+  task,
+  onCreateDraft,
+  onPublish,
+}: {
+  candidate: CandidateRecord;
+  rulePackage: RulePackageRecord | null;
+  busy: boolean;
+  task: "draft" | "publish" | null;
+  onCreateDraft: (candidate: CandidateRecord) => void;
+  onPublish: (rulePackage: RulePackageRecord) => void;
+}) {
+  const published = rulePackage?.status === "published";
+
+  return (
+    <section className="rounded-md border bg-[#fbfaf6] p-3" aria-live="polite">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold">规则包沉淀</span>
+            {published ? (
+              <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
+                可复用
+              </Badge>
+            ) : (
+              <Badge variant="outline">{rulePackage ? "规则包草稿" : "未生成"}</Badge>
+            )}
+          </div>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            定稿后把 Rule Scope、Precheck、反馈规则和正向样本沉淀为后续任务可复用的 Rule Package。
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => onCreateDraft(candidate)}
+          >
+            {task === "draft" ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
+            {rulePackage ? "重新生成草稿" : "生成规则包草稿"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy || !rulePackage || published}
+            onClick={() => {
+              if (rulePackage) {
+                onPublish(rulePackage);
+              }
+            }}
+          >
+            {task === "publish" ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
+            {published ? "规则包已发布" : "发布规则包"}
+          </Button>
+        </div>
+      </div>
+      {rulePackage ? (
+        <div className="mt-3 rounded-md border bg-white px-3 py-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">{rulePackage.title}</span>
+            <Badge variant={published ? "secondary" : "outline"}>
+              {published ? "规则包已发布" : "规则包草稿"}
+            </Badge>
+            <span className="font-mono text-xs text-muted-foreground">{rulePackage.version}</span>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            {rulePackage.summary}
+          </p>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

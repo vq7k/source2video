@@ -300,7 +300,7 @@ function safeReturnHref(returnTo: string | undefined, runId: string | undefined)
     return returnTo;
   }
 
-  return runId ? `/?runId=${encodeURIComponent(runId)}` : "/";
+  return runId ? `/writing?runId=${encodeURIComponent(runId)}` : "/writing";
 }
 
 function frameworkHref(params: FrameworkSearchParams) {
@@ -338,6 +338,7 @@ export default async function LangfuseLensPage({ searchParams }: FrameworkPagePr
   const langfuseSettings = getLangfuseSettings();
   const failedCalls = calls.filter((call) => call.status === "failed");
   const selectedTraceId = params.traceId;
+  const selectedTraceCall = selectedTraceId ? calls.find((call) => traceMatches(call, selectedTraceId)) ?? null : null;
   const inspectorCalls = selectedNode ? selectedNodeCalls : [];
   const visibleLangfuseUrl = firstLangfuseTraceUrl(inspectorCalls, selectedTraceId) ?? null;
   const returnHref = safeReturnHref(params.returnTo, selectedRun?.id);
@@ -404,6 +405,8 @@ export default async function LangfuseLensPage({ searchParams }: FrameworkPagePr
           {selectedRun ? <Badge variant="outline">round {selectedRun.round ?? 1}</Badge> : null}
         </div>
 
+        {selectedTraceId ? <TraceDeepLinkStatus call={selectedTraceCall} traceId={selectedTraceId} /> : null}
+
         {selectedRun ? (
           <NodeStageNav
             run={selectedRun}
@@ -452,6 +455,33 @@ export default async function LangfuseLensPage({ searchParams }: FrameworkPagePr
         />
       </aside>
     </main>
+  );
+}
+
+function TraceDeepLinkStatus({
+  call,
+  traceId,
+}: {
+  call: LLMCallTraceRecord | null;
+  traceId: string;
+}) {
+  return (
+    <section className="shrink-0 border-b bg-white px-4 py-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge variant={call ? "secondary" : "destructive"}>
+          {call ? "Trace 已定位" : "Trace 未命中"}
+        </Badge>
+        <span className="break-all font-mono text-muted-foreground">{traceId}</span>
+        {call ? (
+          <>
+            <Badge variant="outline">{nodeTitle(call.nodeType)}</Badge>
+            <Badge variant="outline">评分写入 {scoreSinkLabel(call)}</Badge>
+          </>
+        ) : (
+          <span className="text-muted-foreground">请检查 runId / traceId 是否属于同一次任务。</span>
+        )}
+      </div>
+    </section>
   );
 }
 

@@ -1,6 +1,6 @@
 # Langfuse 接入说明
 
-本文是 `doc-maker` 当前 Langfuse 接入 SOT。目标不是自研观测平台，而是把业务节点的 LLM 调用、自动评分和人工轻反馈写入 Langfuse，再由 `/framework` 做业务节点 Lens。
+本文是 `doc-maker` 当前 Langfuse 接入 SOT。目标不是自研观测平台，而是把业务节点的 LLM 调用、独立 eval 和人工轻反馈写入 Langfuse，再由 `/framework` 做业务节点 Lens。
 
 ## 1. 部署选择
 
@@ -88,13 +88,14 @@ curl --noproxy '*' -X POST http://localhost:3011/api/writing-runs/<runId>/confir
 - Candidate Core Eval attribution 写入 Langfuse Scores。
 - 人工轻反馈写入 `human.feedback_score` 或 `human.feedback_label`。
 - `/framework?runId=<runId>&nodeRunId=<nodeRunId>` 只展示该业务节点。
+- `/framework?runId=<runId>&traceId=<traceId>` 必须反推并选中对应 `nodeRunId`，页面显式展示“Trace 已定位”和 ScoreSink / Langfuse 写入状态。
 
 ## 5. 与 Langfuse 自有功能的分工
 
 | Langfuse 模块 | Langfuse 负责 | doc-maker 负责 |
 |---|---|---|
 | Traces / Generations | 观测调用、错误、latency、prompt/output | 业务节点上下文和跳转入口 |
-| Scores | 存储自动评分、人工评分、judge 评分 | 定义评分维度、业务归因和写入时机 |
+| Scores | 存储独立 eval 分数、人工评分、judge 评分 | 定义评分维度、业务归因和写入时机 |
 | Human Annotation | 人工复评工作台 | L1 轻反馈入口和反馈账本 |
 | Datasets | 固化输入/输出样本集 | 决定哪些候选/反馈可晋升为回归样本 |
 | Experiments | 比较 prompt/model/rule snapshot | 发起哪组规则快照和候选生成批次参与实验 |

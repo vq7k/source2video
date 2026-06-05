@@ -10,13 +10,13 @@
 
 `source2video/doc-maker/` ——**source2video 仓的第一个子项目**。
 
-**当前阶段**：文档完备，零代码。**下一步 = 实施 MVP**（见 `docs/07-acceptance.md` §5 出口判据 9 条）。
+**当前阶段**：Writing Production v1 本地可证明闭环已完成。当前主入口是 `/writing`，完整观测入口是 `/framework`。
 
 **子项目身份**：
 - LLM workflow 流水线
-- 输入：PPT/教材 markdown
-- 输出：script + visual_spec + qa 文档
-- 下游：astral-pipeline（外部 repo）→ TTS → Remotion
+- 输入：混乱素材 / 参考写法 / 评审偏好
+- 输出：多候选文本、自动 eval、反馈迭代、Rule Package
+- 下游：video-maker / tts-maker 待启动；astral-pipeline / TTS / Remotion 仍是外部边界
 
 ---
 
@@ -26,11 +26,11 @@
 |---|---|---|
 | ★★★ | [`docs/02-architecture.md`](./docs/02-architecture.md) | 框架本体（5 抽象 + 6 模块）。写任何代码前 |
 | ★★★ | [`docs/03-invariants.md`](./docs/03-invariants.md) | 16 主 + 3 子不变量。写代码前先过一遍 |
-| ★★★ | [`docs/07-acceptance.md`](./docs/07-acceptance.md) | MVP 出口判据 9 条 |
+| ★★★ | [`docs/07-acceptance.md`](./docs/07-acceptance.md) | Writing Production v1 闭环 DoD |
 | ★★★ | [`docs/04-handbook.md`](./docs/04-handbook.md) | 任何"怎么用"问题 |
 | ★★ | [`docs/05-recipes.md`](./docs/05-recipes.md) | 加新 source / 物料 / 节点 / console step-by-step |
 | ★★ | [`docs/08-tech-stack.md`](./docs/08-tech-stack.md) | 动手前打开就抄（pyproject / .env / 包版本） |
-| ★★ | [`docs/06-ui-spec.md`](./docs/06-ui-spec.md) | 写 Streamlit Console 时 |
+| ★★ | [`docs/06-ui-spec.md`](./docs/06-ui-spec.md) | 写 Next.js Console 时 |
 | ★★ | [`docs/01-quickstart.md`](./docs/01-quickstart.md) | 第一次跑通 toy 节点 |
 | ★★ | [`docs/00-glossary.md`](./docs/00-glossary.md) | 拿不准术语含义时 |
 | ★★ | [`docs/ADRs/`](./docs/ADRs/) | 遇到设计疑问时查 ADR-001~022 |
@@ -87,19 +87,7 @@
 
 ## 当前要紧的下一步
 
-按 `docs/07-acceptance.md` §5 MVP 出口判据 9 条：
-
-1. [ ] L1 + L2 + L3 测试全绿
-2. [ ] L4 ToyNode dogfood 在 `cases/round1/` ≥3 个 case 上跑通
-3. [ ] Langfuse trace 完整 + Decision Trace 完整
-4. [ ] Eval Attribution 完整（缺字段判失败）
-5. [ ] Auto-judge 全量跑通
-6. [ ] ToyNode Console 上线（Streamlit 单页 ≤ 200 行）
-7. [ ] 反馈 → 改物料 → regression → bump 闭环跑通
-8. [ ] 物料版本复现性
-9. [ ] 框架不挂、产物结构合规
-
-**实施起点**：环境验证 Hello World（OpenAI SDK + CLIProxyAPI + Langfuse），见 `docs/08-tech-stack.md` §3.1 / §3.3。
+`docs/07-acceptance.md` §-2 的 **Writing Production v1 闭环 DoD** 已本地收口。下一步从仓级 `.agents/STATUS.md` 的候选里选：部署线上 smoke、继续 v1 后 backlog、启动 video-maker / tts-maker，或决断 `s2v-core` 抽离。
 
 ---
 
