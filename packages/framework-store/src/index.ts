@@ -16,6 +16,7 @@ export {
   type FrameworkMigrationClient,
 } from "./migrations";
 export { createPostgresArtifactRepository, type ArtifactRepositoryOptions } from "./repositories/artifacts";
+export { createPostgresDatasetRepository } from "./repositories/datasets";
 export { createPostgresJobRepository, type JobRepositoryOptions } from "./repositories/jobs";
 export { createPostgresWorkflowRunRepository } from "./repositories/workflow-runs";
 
@@ -103,9 +104,18 @@ export type FailJobInput = {
   metadata?: WorkflowMetadata;
 };
 
+export type FrameworkDatasetSplit = "draft" | "train" | "validation" | "test" | (string & {});
+
 export type FrameworkDatasetItem = {
   id: string;
   datasetId: string;
+  sourceRunId?: string;
+  sourceNodeRunId?: string;
+  sourceArtifactId?: string;
+  inputRef?: ArtifactRecord;
+  expectedOutputRef?: ArtifactRecord;
+  split?: FrameworkDatasetSplit;
+  labels?: WorkflowJsonObject;
   inputArtifacts: ArtifactRecord[];
   expectedArtifacts: ArtifactRecord[];
   metadata: WorkflowMetadata;
