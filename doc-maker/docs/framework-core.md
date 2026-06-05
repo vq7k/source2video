@@ -30,7 +30,7 @@ Business Adapter
   depends on: workflow-core
 
 Workflow Core
-  owns: NodeSpec / NodeRun / ArtifactRef / EvalRun / FeedbackEvent
+  owns: WorkflowRun / NodeSpec / NodeRun / ArtifactRef / EvalRun / FeedbackSignal / SnapshotRef
   depends on: observability interface
 
 Observability
@@ -44,7 +44,11 @@ Langfuse
 依赖方向只允许向下：
 
 ```text
-writing-* -> workflow-core -> observability -> langfuse
+writing-domain -> workflow-core
+writing-domain -> observability
+observability -> workflow-core
+observability -> langfuse
+ui -> writing-domain / observability
 ```
 
 禁止：
@@ -56,6 +60,56 @@ L1 UI -> raw Langfuse query assembly
 ```
 
 ## 3. 核心契约
+
+### 3.0 当前实现状态
+
+截至 2026-05-21，框架层已从 `ui/lib` 迁出，形成三个显式包目录：
+
+| 包 | 路径 | 职责 |
+|---|---|---|
+| `workflow-core` | `doc-maker/packages/workflow-core/src/` | 业务无关协议：Artifact / NodeRun / Eval / Trace / Feedback / Snapshot / WorkflowRun |
+| `observability` | `doc-maker/packages/observability/src/` | TraceSink / ScoreSink / Langfuse 映射 / local-json fallback |
+| `writing-domain` | `doc-maker/packages/writing-domain/src/` | Writing 业务域 runtime、LLM provider、store、eval adapter、workflow adapter |
+
+第一层核心协议状态：
+
+| 文件 | 状态 | 说明 |
+|---|---|---|
+| `artifact.ts` | 已有 | `ArtifactRef`，跨业务边界引用输入/输出产物 |
+| `node.ts` | 已有 | `NodeSpec`、`NodeRunRecord` |
+| `eval.ts` | 已有 | `CoreEvalRun`、deterministic eval attribution |
+| `trace.ts` | 已有 | `LLMCallTraceRecord`、TraceSink contract |
+| `score.ts` | 已有 | ScoreSink contract |
+| `feedback.ts` | 已有 | `WorkflowFeedbackSignal` |
+| `snapshot.ts` | 已有 | `WorkflowSnapshotRef` |
+| `run.ts` | 已有 | `WorkflowRunRecord` 聚合协议 |
+
+当前还不是独立 npm workspace package，而是源码包目录 + TypeScript path alias。这样可以先拿到清晰边界，又避免引入 monorepo 发布/版本管理负担。判断是否继续升为 workspace package 的标准是：新增第二个业务域时，能否只新增 domain adapter，而不是复制 `runtime.ts`。
+
+### 3.0.1 WorkflowRunRecord
+
+`WorkflowRunRecord` 是跨业务的投影视图，不替代业务 store。
+
+```ts
+type WorkflowRunRecord = {
+  id: string;
+  domain: string;
+  status: "draft" | "running" | "ready" | "feedback" | "finalized" | "failed";
+  inputArtifacts: ArtifactRef[];
+  outputArtifacts: ArtifactRef[];
+  nodeRuns: NodeRunRecord[];
+  evalRuns: CoreEvalRun[];
+  feedbackSignals: WorkflowFeedbackSignal[];
+  snapshots: WorkflowSnapshotRef[];
+  metadata: Record<string, string | number | boolean | null>;
+};
+```
+
+设计含义：
+
+- 业务对象仍由业务 store 管理。
+- Core 只读取 ArtifactRef / NodeRun / Eval / Feedback / Snapshot 这些可复用协议。
+- L2/L3 可以基于 `WorkflowRunRecord` 做通用观测，不理解 Writing / Candidate / Topic。
 
 ### 3.1 NodeSpec
 
@@ -125,6 +179,32 @@ type EvalRun = {
 };
 ```
 
+### 3.5 FeedbackSignal / SnapshotRef
+
+Feedback 和 Snapshot 是支持多轮迭代的核心对象。
+
+```ts
+type WorkflowFeedbackSignal = {
+  id: string;
+  targetArtifactRef: ArtifactRef;
+  status: "unprocessed" | "compiled" | "dismissed";
+  verdict?: string;
+  issue?: string;
+  expected?: string;
+};
+
+type WorkflowSnapshotRef = {
+  id: string;
+  kind: string;
+  version: string;
+  status: "active" | "archived";
+  sourceRefs: string[];
+  summary: string;
+};
+```
+
+这两个对象不能写死为 RulePatch / RuleSnapshot。Writing 里它们表现为规则补丁和规则快照；未来口播、TTS、分镜节点可以表现为不同的风格约束、格式约束或下游工具约束。
+
 ## 4. Langfuse 映射
 
 Framework Core 不重做 Langfuse，只做映射。
@@ -134,7 +214,7 @@ Framework Core 不重做 Langfuse，只做映射。
 | `Run` | Trace | 一次业务 run 或节点 run 的顶层 trace |
 | `NodeRun` | Span | 节点执行边界 |
 | `LLMCall` | Generation / Observation | 模型调用、prompt version、input/output、token、latency |
-| `EvalRun` | Scores | 自动评分、人工评分、LLM judge 分数 |
+| `EvalRun` | Scores | 独立 eval 分数、人工评分、LLM judge 分数 |
 | `FeedbackEvent` | Score + metadata | 选中文本反馈、延迟反馈、复评 |
 | `ArtifactRef` | metadata | 只存 ref 和摘要，artifact 内容仍由业务 store/git 管 |
 
@@ -273,10 +353,23 @@ Framework Lens 采用和 L1 一致的工作台骨架，但信息层级不同：
 
 ```text
 WritingRunRecord
-  -> writing-adapter.toNodeRunInput()
-  -> workflow-core.runNode()
-  -> writing-adapter.toBusinessViewModel()
+  -> writing-workflow-adapter.toWorkflowRun()
+  -> WorkflowRunRecord
+  -> L2/L3 generic lens / regression tests
 ```
+
+当前已新增 `lib/writing-workflow-adapter.ts`，负责：
+
+| Writing 对象 | Core 投影 |
+|---|---|
+| `quickIntake / jobSpec` | `inputArtifacts[]` |
+| `CandidateRecord` | `outputArtifacts[]` |
+| `frameworkRuns` | `nodeRuns[]` |
+| `evalRun.coreEval` | `evalRuns[]` |
+| `HumanFeedbackRecord` | `feedbackSignals[]` |
+| `RuleSnapshotRecord` | `snapshots[]` |
+
+下一步才考虑把 runtime 执行本身迁到 core runner。当前先保证“业务记录能投影为框架协议”，这是最低风险的解耦切口。
 
 ## 8. 当前难点
 
@@ -301,22 +394,26 @@ WritingRunRecord
 
 ### Step 2：Core contract 重构
 
-- 新增 `workflow-core/node.ts`
-- 新增 `workflow-core/artifact.ts`
-- 新增 `workflow-core/trace.ts`
-- 将 `FrameworkNodeType` 改为 `nodeId: string`
+- 已迁移到 `doc-maker/packages/workflow-core/src/node.ts`
+- 已迁移到 `doc-maker/packages/workflow-core/src/artifact.ts`
+- 已迁移到 `doc-maker/packages/workflow-core/src/trace.ts`
+- 已迁移到 `doc-maker/packages/workflow-core/src/run.ts`
+- 已迁移到 `doc-maker/packages/workflow-core/src/feedback.ts`
+- 已迁移到 `doc-maker/packages/workflow-core/src/snapshot.ts`
+- 已将 `FrameworkNodeType` 改为 `string`
 
 ### Step 3：Observability sink
 
-- 新增 `LangfuseTraceSink`
-- 新增 `ScoreSink`
+- 已迁移到 `doc-maker/packages/observability/src/trace-sink.ts`
+- 已迁移到 `doc-maker/packages/observability/src/score-sink.ts`
 - local-json 作为 fallback
 - settings 支持 `LANGFUSE_HOST` / `LANGFUSE_BASE_URL`、`LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY` 从 env 读取
 
 ### Step 4：Writing adapter 接入
 
-- Scope / Precheck / Candidate / Feedback / RulePatch 通过 adapter 写 NodeRunRecord。
-- Candidate eval 写 EvalRun + Langfuse Scores。
+- 已迁移到 `doc-maker/packages/writing-domain/src/workflow-adapter.ts`，可把 `WritingRunRecord` 投影为 `WorkflowRunRecord`。
+- Candidate eval 已写 `CoreEvalRun`，并通过 ScoreSink 写入 Langfuse/local fallback。
+- 后续再把 Scope / Precheck / Candidate / Feedback / RulePatch 的执行入口逐步迁入 core runner。
 
 ### Step 5：L1 节点级入口
 
