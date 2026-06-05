@@ -87,7 +87,7 @@
 
 ## 当前要紧的下一步
 
-`docs/07-acceptance.md` §-2 的 **Writing Production v1 闭环 DoD** 已本地收口。下一步从仓级 `.agents/STATUS.md` 的候选里选：部署线上 smoke、继续 v1 后 backlog、启动 video-maker / tts-maker，或决断 `s2v-core` 抽离。
+`docs/07-acceptance.md` §-2 的 **Writing Production v1 闭环 DoD** 已本地收口。下一步先读本工作区 `.agent/STATUS.md`；跨仓候选和派活状态看根 `.agent/STATUS.md`。
 
 ---
 

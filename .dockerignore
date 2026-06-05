@@ -1,6 +1,6 @@
 .git
 .github
-.agents
+.agent
 .codex
 .claude
 .DS_Store
