@@ -7,9 +7,28 @@ export type WorkflowJsonValue =
 
 export type WorkflowJsonObject = Record<string, WorkflowJsonValue>;
 
-export type WorkflowMetadataValue = WorkflowJsonPrimitive;
+export type WorkflowMetadataValue = WorkflowJsonValue;
 
-export type WorkflowMetadata = Record<string, WorkflowMetadataValue>;
+export type WorkflowMetadata = WorkflowJsonObject;
+
+export type ArtifactPayloadInput =
+  | {
+      contentType: string;
+      value: string;
+      encoding?: "utf8" | "base64";
+    }
+  | {
+      contentType: string;
+      bytes: Uint8Array;
+    };
+
+export type ArtifactPayloadMetadata = {
+  contentType: string;
+  contentHash: string;
+  byteLength: number;
+  uri?: string;
+  inlineValue?: WorkflowJsonValue;
+};
 
 export type ArtifactRef = {
   id: string;
@@ -24,6 +43,7 @@ export type ArtifactRef = {
 export type ArtifactRecord = ArtifactRef & {
   runId?: string;
   nodeRunId?: string;
+  payload?: ArtifactPayloadInput;
   createdAt: string;
   updatedAt: string;
 };

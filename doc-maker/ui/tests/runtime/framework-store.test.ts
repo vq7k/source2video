@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,7 +12,7 @@ import type {
   FrameworkJobRecord,
   FrameworkStore,
 } from "../../../../packages/framework-store/src/index";
-import type { ArtifactRecord } from "@source2video/workflow-core/artifact";
+import type { ArtifactRecord, WorkflowJsonObject } from "@source2video/workflow-core/artifact";
 import type { CoreEvalRunRecord } from "@source2video/workflow-core/eval";
 import type { WorkflowFeedbackSignalRecord } from "@source2video/workflow-core/feedback";
 import type { NodeRunRecord } from "@source2video/workflow-core/node";
@@ -48,6 +49,20 @@ type NodeRunRow = {
   started_at: string;
   completed_at: string | null;
   metadata_json: string;
+};
+
+type ArtifactRow = {
+  id: string;
+  run_id: string | null;
+  node_run_id: string | null;
+  kind: string;
+  version: string;
+  uri: string | null;
+  summary: string;
+  material_refs_json: string;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
 };
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -131,6 +146,50 @@ class FakeWorkflowRunSqlClient {
 
     if (normalized.includes("from framework_node_runs") && normalized.includes("where run_id = $1")) {
       return { rows: (this.nodeRuns.get(parameters[0] as string) ?? []) as T[] };
+    }
+
+    throw new Error(`Unhandled SQL in fake client: ${normalized}`);
+  }
+}
+
+class FakeArtifactSqlClient {
+  readonly artifacts = new Map<string, ArtifactRow>();
+  readonly queries: Array<{ sql: string; parameters: readonly unknown[] }> = [];
+
+  async query<T>(sql: string, parameters: readonly unknown[] = []): Promise<QueryResult<T>> {
+    this.queries.push({ sql, parameters });
+    const normalized = compactSql(sql);
+
+    if (normalized.includes("insert into framework_artifacts")) {
+      const row: ArtifactRow = {
+        id: parameters[0] as string,
+        run_id: (parameters[1] as string | undefined) ?? null,
+        node_run_id: (parameters[2] as string | undefined) ?? null,
+        kind: parameters[3] as string,
+        version: parameters[4] as string,
+        uri: (parameters[5] as string | undefined) ?? null,
+        summary: parameters[6] as string,
+        material_refs_json: parameters[7] as string,
+        metadata_json: parameters[8] as string,
+        created_at: parameters[9] as string,
+        updated_at: parameters[10] as string,
+      };
+      this.artifacts.set(row.id, row);
+      return { rows: [row as T] };
+    }
+
+    if (normalized.includes("from framework_artifacts") && normalized.includes("where id = $1")) {
+      const row = this.artifacts.get(parameters[0] as string);
+      return { rows: row ? [row as T] : [] };
+    }
+
+    if (normalized.includes("from framework_artifacts") && normalized.includes("where run_id = $1")) {
+      const rows = Array.from(this.artifacts.values()).filter((row) => row.run_id === parameters[0]);
+      return { rows: rows as T[] };
+    }
+
+    if (normalized.includes("from framework_artifacts")) {
+      return { rows: Array.from(this.artifacts.values()) as T[] };
     }
 
     throw new Error(`Unhandled SQL in fake client: ${normalized}`);
@@ -416,6 +475,60 @@ describe("framework store contracts", () => {
 
     expect(withNode.nodeRuns).toEqual([nodeRun]);
     expect(client.nodeRuns.get(run.id)).toHaveLength(1);
+    expect(client.queries.every((query) => Array.isArray(query.parameters))).toBe(true);
+    expect(client.queries.some((query) => query.parameters.length > 0)).toBe(true);
+  });
+
+  it("stores small artifact payloads inline and spills large payloads to the artifact store", async () => {
+    const { createPostgresArtifactRepository } = await import(
+      "../../../../packages/framework-store/src/repositories/artifacts"
+    );
+    const { createFilesystemArtifactStore } = await import("../../../../packages/artifact-store/src/index");
+    const client = new FakeArtifactSqlClient();
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "s2v-artifacts-"));
+    const repository = createPostgresArtifactRepository(client, {
+      store: createFilesystemArtifactStore({ rootDir }),
+      inlinePayloadMaxBytes: 8,
+    });
+    const at = "2026-06-05T00:00:00.000Z";
+    const baseArtifact: ArtifactRecord = {
+      id: "artifact_base",
+      kind: "text",
+      version: "v1",
+      summary: "payload",
+      materialRefs: [],
+      metadata: {},
+      createdAt: at,
+      updatedAt: at,
+    };
+
+    const small = await repository.putArtifact({
+      ...baseArtifact,
+      id: "artifact_small",
+      payload: { contentType: "text/plain", value: "tiny" },
+    });
+    const large = await repository.putArtifact({
+      ...baseArtifact,
+      id: "artifact_large",
+      payload: { contentType: "text/plain", value: "large payload" },
+    });
+    const smallPayload = small.metadata.artifactPayload as WorkflowJsonObject;
+    const largePayload = large.metadata.artifactPayload as WorkflowJsonObject;
+    const largeRow = client.artifacts.get("artifact_large");
+
+    expect(small.uri).toBeUndefined();
+    expect(smallPayload.inlineValue).toBe("tiny");
+    expect(smallPayload.contentHash).toMatch(/^sha256:/);
+    expect(smallPayload.byteLength).toBe(4);
+    expect(client.artifacts.get("artifact_small")?.uri).toBeNull();
+
+    expect(large.uri).toMatch(/^file:/);
+    expect(largePayload.inlineValue).toBeUndefined();
+    expect(largePayload.contentHash).toMatch(/^sha256:/);
+    expect(largePayload.byteLength).toBe(13);
+    expect(largeRow?.uri).toBe(large.uri);
+    expect(largeRow?.metadata_json).not.toContain("large payload");
+    expect(fs.readFileSync(fileURLToPath(large.uri ?? ""), "utf8")).toBe("large payload");
     expect(client.queries.every((query) => Array.isArray(query.parameters))).toBe(true);
     expect(client.queries.some((query) => query.parameters.length > 0)).toBe(true);
   });

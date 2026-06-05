@@ -15,6 +15,7 @@ export {
   type FrameworkMigration,
   type FrameworkMigrationClient,
 } from "./migrations";
+export { createPostgresArtifactRepository, type ArtifactRepositoryOptions } from "./repositories/artifacts";
 export { createPostgresWorkflowRunRepository } from "./repositories/workflow-runs";
 
 export type ListPage = {
