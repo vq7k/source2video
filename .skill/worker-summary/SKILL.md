@@ -1,20 +1,27 @@
 # skill: worker-summary
 
-> 当前 source2video 未启用常驻 Worker。
+> source2video 常驻 Worker 回报协议。
 
 ## 何时用
 
-暂不使用。当前没有持久 Worker session 需要向 Engineer 汇总。
+FrameworkWorker / WritingWorker 完成被 Orchestrator 派发的任务后使用。
 
-## 启用条件
+## 回报格式
 
-等 `.skill/delegate-worker` 按本项目重写并启用后，再补 Worker return summary 协议。
+```markdown
+## <Worker> Summary
 
-## 当前替代
+- Branch:
+- Commit:
+- Changed files:
+- Commands:
+- Result:
+- Risks:
+- Next actionable:
+```
 
-复杂 session 结束时由 Engineer 直接按 `PROJECT.md` 的 session 结束 SOP 更新：
+## 状态回写
 
-- `.agents/STATUS.md`
-- `.agents/TODO.md`
-- `.agents/sessions/<YYYY-MM-DD>-<topic>/`
-- `.agents/learned-rules.md`（如有踩坑）
+- Worker 更新自己 cwd 下 `.agent/STATUS.md` / `.agent/TODO.md`
+- 复杂任务写自己 cwd 下 `.agent/sessions/<YYYY-MM-DD>-<topic>/`
+- Orchestrator 验收后更新根 `.agent/STATUS.md` / `.agent/TODO.md`

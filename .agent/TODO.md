@@ -2,12 +2,12 @@
 
 ## 当前 in-progress
 
-- [ ] 派 FrameworkWorker 执行 framework data plane **Task 0: Package Topology Split**
+- [ ] 等 FrameworkWorker 回报 framework data plane **Task 0: Package Topology Split**；Orchestrator 只做验收，不继续直接写 framework 代码
 
 ## user/in-progress 文件归属（本次收口不重排）
 
 - [ ] doc-maker docs 同步/提交决断：`07-acceptance.md` / `README.md` / `business-console.md` / `framework-core.md` / `reference/langfuse.md`
-- [ ] 未跟踪 docs/skills 文件归属决断：`.agents/skills/`、`skills-lock.json`、若干 `doc-maker/docs/*research*.md` / remediation 文档
+- [ ] 未跟踪 docs/skills 文件归属决断：`.agent/skills/`、`skills-lock.json`、若干 `doc-maker/docs/*research*.md` / remediation 文档
 
 ## 候选里程碑（待 user 拍板优先级）
 
@@ -19,7 +19,7 @@
 
 ## 已完成
 
-- [x] 2026-06-05 初始化持久 Agent team：Orchestrator / FrameworkWorker / WritingWorker / InfraWorker / QAWorker
+- [x] 2026-06-05 初始化持久 Agent team：Orchestrator / FrameworkWorker / WritingWorker；Infra / QA 改为临时 SubAgent 范围
 - [x] 2026-06-05 部署 Writing Production v1 闭环收口到线上并做 smoke / 业务验收
 
 ## 线上运维候选（按需）
@@ -31,6 +31,6 @@
 ## 跨 runtime harness 后续完善（agent 自我）
 
 - [ ] 实战验证：下次 cold start（无论 Claude / Codex / Aider）跑一遍 catch-up，看是否真自报角色 + 判 STATUS actionable + 强制升级
-- [x] 业务复杂度上升时拆 Worker：FrameworkWorker / WritingWorker / InfraWorker / QAWorker 已有持久启动路径
-- [ ] 如多 session 模式形成，补 `.agents/skills/catch-up/SKILL.md` + `.agents/skills/session-summary/SKILL.md`
-- [ ] 补项目硬约束（如适用）：隐私 / 化名 / secret 管理等，写入 `.agents/SOUL.md` 末尾段
+- [x] 业务复杂度上升时拆 Worker：FrameworkWorker / WritingWorker 已有持久启动路径；横切 Infra / QA 不建常驻
+- [ ] 如多 session 模式形成，补 `.agent/skills/catch-up/SKILL.md` + `.agent/skills/session-summary/SKILL.md`
+- [ ] 补项目硬约束（如适用）：隐私 / 化名 / secret 管理等，写入 `.agent/SOUL.md` 末尾段

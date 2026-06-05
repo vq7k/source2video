@@ -12,23 +12,24 @@
 
 | cwd | 你的角色 |
 |---|---|
-| 仓库根 | Engineer |
-| `doc-maker/` | Engineer |
+| 仓库根 | Orchestrator |
+| `packages/` | FrameworkWorker |
+| `doc-maker/` | WritingWorker |
 
-## 第二步：按当前位置读 CLAUDE.md
+## 第二步：读入口文件
 
 ```bash
-cat CLAUDE.md  # 自动指明必读链路
+cat PROJECT.md  # 仓库根 source of truth
 ```
 
-它会告诉你接着读哪些文件。
+如果当前 cwd 是 `packages/` 或 `doc-maker/`，先读 `../PROJECT.md`，再读当前 cwd 下 `.agent/`。
 
 ## 第三步：必读链路
 
-1. `.agents/SOUL.md` — 你是谁
-2. `.agents/STATUS.md` — 上一次 session 留下什么状态 + sessions/ 归档路径
-3. 上一 session 归档（`.agents/sessions/<date>-<topic>/outputs.md`）— 上一次具体产出了什么
-4. `.agents/TODO.md` — 下一步该做什么
+1. `<cwd>/.agent/SOUL.md` — 你是谁
+2. `<cwd>/.agent/STATUS.md` — 上一次 session 留下什么状态 + sessions/ 归档路径
+3. 上一 session 归档（`<cwd>/.agent/sessions/<date>-<topic>/outputs.md`）— 上一次具体产出了什么
+4. `<cwd>/.agent/TODO.md` — 下一步该做什么
 
 ## 第四步：自检 + **自报角色边界**（强制输出）
 

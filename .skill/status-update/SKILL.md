@@ -1,6 +1,6 @@
 # skill: status-update
 
-更新 `.agents/STATUS.md`。
+更新当前 Agent 工作区的 `.agent/STATUS.md`。
 
 ## 何时用
 
@@ -20,7 +20,7 @@
 [一句话：当前在哪个 milestone / 范围]
 
 ## 最近一次 session
-[日期 + 主题 + 做了什么 + 归档路径 .agents/sessions/<date>-<topic>/]
+[日期 + 主题 + 做了什么 + 归档路径 <cwd>/.agent/sessions/<date>-<topic>/]
 
 ## 阻塞
 [当前阻塞清单；无阻塞写"无"]
@@ -35,7 +35,7 @@
 
 ## 步骤
 
-1. 打开 `.agents/STATUS.md`
+1. 打开当前工作区 `.agent/STATUS.md`
 2. 替换上一次内容（不要堆历史，历史在 `sessions/`）
 3. 至少保留 4 个 `##` 分段，并确保含 `当前 actionable` 或等价 readiness 锚点
 4. commit message 写明 STATUS 更新原因
@@ -48,4 +48,4 @@
 
 ## 校验
 
-`grep -cE '^## ' .agents/STATUS.md` 应 ≥ 4，且 `当前 actionable` 段能让下个 agent 判断是否可开干。
+`grep -cE '^## ' .agent/STATUS.md` 应 ≥ 4，且 `当前 actionable` 段能让下个 agent 判断是否可开干。

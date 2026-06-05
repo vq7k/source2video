@@ -7,7 +7,7 @@
 | 决策类型 | 落地位置 |
 |---|---|
 | 仓级正式决定（架构 / 技术栈 / 跨子项目范围） | `docs/ADRs/<NNN>.md` |
-| session 级临时决定 | `.agents/decisions/<YYYY-MM-DD>-<topic>.md` |
+| session 级临时决定 | `.agent/decisions/<YYYY-MM-DD>-<topic>.md` |
 | session 级临时决定（不沉淀） | session 归档 `decisions.md` 即可 |
 
 ## ADR 文件结构（精简版）
@@ -44,4 +44,4 @@
 
 ## 校验
 
-仓级决策应能在 `docs/ADRs/` 找到；临时决策应能在 `.agents/decisions/` 或 session 归档找到。
+仓级决策应能在 `docs/ADRs/` 找到；临时决策应能在 `.agent/decisions/` 或 session 归档找到。

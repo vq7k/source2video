@@ -8,7 +8,7 @@
 sessions/
 └── YYYY-MM-DD-<topic>/
     ├── context.md     # 本次 session 目标 + 起始上下文（catch-up 后立即写）
-    ├── decisions.md   # session 内做的所有决策（包括 .agents/decisions/ 草稿索引）
+    ├── decisions.md   # session 内做的所有决策（包括 .agent/decisions/ 草稿索引）
     └── outputs.md     # 产出物索引（文件路径 / commit hash / 验收）
 ```
 
@@ -35,4 +35,4 @@ sessions/
 
 ## 上挂
 
-每次归档后在 `.agents/STATUS.md` "最近一次 session" 段引用归档路径。
+每次归档后在 `.agent/STATUS.md` "最近一次 session" 段引用归档路径。

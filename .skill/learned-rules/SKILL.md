@@ -1,6 +1,6 @@
 # skill: learned-rules
 
-追加一条踩坑规则到 `.agents/learned-rules.md`。
+追加一条踩坑规则到 `.agent/learned-rules.md`。
 
 ## 何时用
 
@@ -20,7 +20,7 @@
 ## 步骤
 
 1. 实战踩到坑后立刻写（不要"我以后补"）
-2. 打开 `.agents/learned-rules.md`
+2. 打开 `.agent/learned-rules.md`
 3. 按格式追加
 4. session 结束前 commit
 

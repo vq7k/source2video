@@ -30,7 +30,7 @@ chk "SOUL 含『我的边界』" "grep -q '## 我的边界' .agent/SOUL.md"
 
 echo "== B2-2 STATUS 结构（不强求固定段名，宿主既有命名优先） =="
 total=$(grep -cE '^## ' .agent/STATUS.md 2>/dev/null || echo 0)
-chk "STATUS 分段 ≥4（实得 $total）" "test \"$total\" -ge 4"
+chk "STATUS 分段 ≥4（实得 ${total}）" "test \"$total\" -ge 4"
 chk "STATUS 含 catch-up readiness 锚点段" "grep -qiE '^## .*(actionable|当前|下一步|next|current|现在|now|todo)' .agent/STATUS.md"
 
 echo "== B2-3 工作区独立性（每角色 SOUL = <工作区>/.agent[s]/SOUL.md，不嵌套/不耦合根） =="

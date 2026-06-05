@@ -1,6 +1,6 @@
 # skill: init-agent-teams
 
-> version: v0.3 · status: 成长中（持续修复，非累加）
+> version: v0.4 · status: 成长中（持续修复，非累加）
 > ⚠️ 本 SOP 仍在迭代。**用前先读 §已知问题；用后必按 §回写闭环 回写。**
 
 把一套验证过的「多 Agent 协作骨架」装到**已存在的项目**里（init），并按需体检（check）。
@@ -98,6 +98,7 @@
 - **v0.2（2026-06-04）** 修复上述：structure-check B2-2 STATUS 校验改为「分段 ≥4 + 含 actionable readiness 锚点（不强求固定段名）」，status-update / B2 措辞同步软化；母仓自身 self-check 由 14/15 → 全 PASS。已知问题清零。
 - **实战（2026-06-05，外部项目）** 暴露重大缺陷：skill 把「工作区独立性」只写成软判据（「上下文该隔离」），未落成硬规则——照此可拆出 **cwd 共享 + 状态耦合根 `.agents/`** 的非法 Worker（横切职责 infra/qa 无独立工作区，却借仓库根 cwd、状态塞 `.agents/workers/`，致子 Agent 无法独立进入工作区、catch-up「看 cwd 定角色」失效）。
 - **v0.3（2026-06-05）** 修复上述：裂变判据 4→5 条（加「独立工作区」）+ 新增「工作区硬规则」段（cwd 唯一映射 / 状态必在 `<cwd>/.agent/` / 横切职责不配常驻）+ A4 嵌入规则 + catch-up cwd 唯一性 + B2 第 1 组并入工作区独立性 + structure-check 新增 B2-3 程序化检测（每 SOUL 必直接位于 `.agent[s]/` 下，否则判耦合）。已知问题清零。
+- **v0.4（2026-06-05）** 修复 structure-check 在 `.agent/STATUS.md` 缺失时 `set -u` 误把 `$total）` 解析成异常变量的问题：改为 `${total}`。
 
 ## 已知问题 · 待清零
 （空 —— 理想态。发现即修，修进 changelog。）

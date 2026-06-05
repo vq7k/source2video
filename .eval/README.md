@@ -4,7 +4,7 @@
 
 当前评测方案：
 
-- [`agent-team-behavior-test-plan.md`](./agent-team-behavior-test-plan.md)：验证 Orchestrator / FrameworkWorker / WritingWorker / InfraWorker / QAWorker 的身份、catch-up、边界、委派、状态回写是否符合预期。
+- [`agent-team-behavior-test-plan.md`](./agent-team-behavior-test-plan.md)：验证 Orchestrator / FrameworkWorker / WritingWorker 的持久身份、catch-up、边界、委派、状态回写，以及 Infra / QA 临时 SubAgent 边界是否符合预期。
 
 ## 使用原则
 

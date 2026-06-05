@@ -23,9 +23,9 @@ operating procedures（标准操作流程）。
 
 任何根级 SKILL.md 一旦混入"具体编程实践"或"业务规则"，应**下沉到模块级**或**拆出去**。模块级 SKILL.md 反之欢迎包含框架特定实践，但仅限本模块。
 
-## 与 `.agents/` 的关系
+## 与 `.agent/` 的关系
 
-- `.agents/` = 角色定义 + 状态（who / what / status）
+- `.agent/` = 当前工作区角色定义 + 状态（who / what / status）
 - `.skill/` = 怎么做（how-to / SOP）
 
 正交。
@@ -40,8 +40,8 @@ operating procedures（标准操作流程）。
 | skill | 用途 |
 |---|---|
 | `catch-up` | session 启动时怎么 catch up |
-| `status-update` | 怎么写 `.agents/STATUS.md` |
-| `learned-rules` | 怎么写 `.agents/learned-rules.md` |
+| `status-update` | 怎么写 `.agent/STATUS.md` |
+| `learned-rules` | 怎么写 `.agent/learned-rules.md` |
 | `decision-log` | 怎么落决策（项目级 vs 模块级） |
 | `delegate-worker` | 未启用：未来裂变 Worker 后重写 |
 | `worker-summary` | 未启用：未来裂变 Worker 后重写 |

@@ -2,11 +2,10 @@
 
 ## 当前 in-progress
 
-无。等待 Orchestrator 派活。
+- [ ] Task 0: Package Topology Split，接手 `codex/framework-topology` 未提交 WIP，完成 root `packages/` 拓扑迁移、验证并提交
 
 ## 下一候选
 
-- [ ] Task 0: Package Topology Split，把通用 framework packages 固定在仓库根 `packages/`
 - [ ] Task 1: Define Generic Persistence Contracts
 - [ ] 对齐 `doc-maker` 对 framework public exports 的 adapter 接入方式
 

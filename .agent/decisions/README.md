@@ -7,7 +7,7 @@
 | 类型 | 位置 | 持久度 | 受众 |
 |---|---|---|---|
 | **仓级正式 ADR** | `docs/ADRs/<NNN>.md` | 长期，定义仓级架构 | 跨 session / 跨 runtime / 跨 contributor |
-| **session 临时草稿** | 本目录 `.agents/decisions/<date>-<topic>.md` | 短期，单 session 内做出的过程决策 | 本 session + 下次 catch-up 参考 |
+| **session 临时草稿** | 本目录 `.agent/decisions/<date>-<topic>.md` | 短期，单 session 内做出的过程决策 | 本 session + 下次 catch-up 参考 |
 
 **升级路径**：session 草稿如反映**仓级架构变化** → 升级写正式 ADR 到 `docs/ADRs/`，并在草稿末尾标 "↑ promoted to ADR-<NNN>"。
 

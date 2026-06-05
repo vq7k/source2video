@@ -9,8 +9,8 @@
 ## 我不做（catch-up 后必自报）
 
 1. **不把通用 framework 写进 `doc-maker`** → 通用 contracts/store/runtime 交给 FrameworkWorker
-2. **不做云部署、Caddy、OSS/PG 运维** → 交给 InfraWorker
-3. **不单独宣称线上验收完成** → 交给 QAWorker 验证，Orchestrator 汇总
+2. **不做云部署、Caddy、OSS/PG 运维** → 交给 Orchestrator 临时派 Infra / Deploy SubAgent
+3. **不单独宣称线上验收完成** → 交给 Orchestrator 临时派 QA SubAgent 验证，Orchestrator 汇总
 4. **不修改外部独立 repo** → 通过 Orchestrator 协调
 5. **不改仓级 ADR / Worker 边界最终结论** → 交给 Orchestrator
 
@@ -25,7 +25,7 @@
 ## 我的边界
 
 - **启动 cwd**：`doc-maker/`
-- **专属状态目录**：`doc-maker/.agents/writing/`
+- **专属状态目录**：`doc-maker/.agent/`
 - **可写主域**：`doc-maker/ui`、`doc-maker/packages/writing-domain`
 - **协同可写**：被 Orchestrator 明确委派时，可小改 framework adapter 调用点
 - **不可主导**：framework schema、部署资源、release gate 最终结论
