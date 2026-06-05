@@ -17,6 +17,39 @@ import type { WorkflowFeedbackSignalRecord } from "@source2video/workflow-core/f
 import type { NodeRunRecord } from "@source2video/workflow-core/node";
 import type { WorkflowRunRecord } from "@source2video/workflow-core/run";
 
+type QueryResult<T> = {
+  rows: T[];
+};
+
+type RunRow = {
+  id: string;
+  domain: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  input_artifacts_json: string;
+  output_artifacts_json: string;
+  eval_runs_json: string;
+  feedback_signals_json: string;
+  snapshots_json: string;
+  metadata_json: string;
+};
+
+type NodeRunRow = {
+  id: string;
+  run_id: string;
+  node_id: string;
+  node_version: string;
+  status: string;
+  input_refs_json: string;
+  output_refs_json: string;
+  eval_run_refs_json: string;
+  trace_refs_json: string;
+  started_at: string;
+  completed_at: string | null;
+  metadata_json: string;
+};
+
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(dirname, "../../../..");
 const coreMigrationPath = "packages/framework-store/migrations/0001_framework_core.sql";
@@ -31,6 +64,77 @@ function frameworkStoreSource(): string {
 
 function compactSql(sql: string): string {
   return sql.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+class FakeWorkflowRunSqlClient {
+  readonly runs = new Map<string, RunRow>();
+  readonly nodeRuns = new Map<string, NodeRunRow[]>();
+  readonly queries: Array<{ sql: string; parameters: readonly unknown[] }> = [];
+
+  async query<T>(sql: string, parameters: readonly unknown[] = []): Promise<QueryResult<T>> {
+    this.queries.push({ sql, parameters });
+    const normalized = compactSql(sql);
+
+    if (normalized.includes("insert into framework_workflow_runs")) {
+      const row: RunRow = {
+        id: parameters[0] as string,
+        domain: parameters[1] as string,
+        status: parameters[2] as string,
+        created_at: parameters[3] as string,
+        updated_at: parameters[4] as string,
+        input_artifacts_json: parameters[5] as string,
+        output_artifacts_json: parameters[6] as string,
+        eval_runs_json: parameters[7] as string,
+        feedback_signals_json: parameters[8] as string,
+        snapshots_json: parameters[9] as string,
+        metadata_json: parameters[10] as string,
+      };
+      this.runs.set(row.id, row);
+      return { rows: [row as T] };
+    }
+
+    if (normalized.includes("insert into framework_node_runs")) {
+      const row: NodeRunRow = {
+        id: parameters[0] as string,
+        run_id: parameters[1] as string,
+        node_id: parameters[2] as string,
+        node_version: parameters[3] as string,
+        status: parameters[4] as string,
+        input_refs_json: parameters[5] as string,
+        output_refs_json: parameters[6] as string,
+        eval_run_refs_json: parameters[7] as string,
+        trace_refs_json: parameters[8] as string,
+        started_at: parameters[9] as string,
+        completed_at: (parameters[10] as string | undefined) ?? null,
+        metadata_json: parameters[11] as string,
+      };
+      const rows = this.nodeRuns.get(row.run_id) ?? [];
+      const nextRows = rows.filter((item) => item.id !== row.id);
+      nextRows.push(row);
+      this.nodeRuns.set(row.run_id, nextRows);
+      return { rows: [row as T] };
+    }
+
+    if (normalized.includes("from framework_workflow_runs") && normalized.includes("where id = $1")) {
+      const row = this.runs.get(parameters[0] as string);
+      return { rows: row ? [row as T] : [] };
+    }
+
+    if (normalized.includes("from framework_workflow_runs") && normalized.includes("where domain = $1")) {
+      const rows = Array.from(this.runs.values()).filter((row) => row.domain === parameters[0]);
+      return { rows: rows as T[] };
+    }
+
+    if (normalized.includes("from framework_workflow_runs")) {
+      return { rows: Array.from(this.runs.values()) as T[] };
+    }
+
+    if (normalized.includes("from framework_node_runs") && normalized.includes("where run_id = $1")) {
+      return { rows: (this.nodeRuns.get(parameters[0] as string) ?? []) as T[] };
+    }
+
+    throw new Error(`Unhandled SQL in fake client: ${normalized}`);
+  }
 }
 
 describe("framework store contracts", () => {
@@ -249,5 +353,70 @@ describe("framework store contracts", () => {
     expect(source).toMatch(/\brunFrameworkStoreMigrations\b/);
     expect(fs.existsSync(path.join(repoRoot, "doc-maker/ui/scripts/migrate-framework-store.mjs"))).toBe(true);
     expect(packageJson.scripts["framework:migrate"]).toBe("node scripts/migrate-framework-store.mjs");
+  });
+
+  it("persists workflow runs with parameterized SQL and explicit JSON round-trips", async () => {
+    const { createPostgresWorkflowRunRepository } = await import(
+      "../../../../packages/framework-store/src/repositories/workflow-runs"
+    );
+    const client = new FakeWorkflowRunSqlClient();
+    const repository = createPostgresWorkflowRunRepository(client);
+    const at = "2026-06-05T00:00:00.000Z";
+    const run: WorkflowRunRecord = {
+      id: "run_1",
+      domain: "generic",
+      status: "running",
+      createdAt: at,
+      updatedAt: at,
+      inputArtifacts: [],
+      outputArtifacts: [],
+      nodeRuns: [],
+      evalRuns: [],
+      feedbackSignals: [],
+      snapshots: [],
+      metadata: { project: "s2v", active: true, round: 1 },
+    };
+
+    await repository.putRun(run);
+    const updated = await repository.putRun({
+      ...run,
+      status: "ready",
+      metadata: { project: "s2v", active: false, round: 2 },
+    });
+    const genericRun = await repository.putRun({
+      ...run,
+      id: "run_2",
+      domain: "video",
+      metadata: { project: "video" },
+    });
+    const nodeRun: NodeRunRecord = {
+      id: "node_run_1",
+      nodeId: "node_1",
+      nodeVersion: "v1",
+      runId: run.id,
+      status: "complete",
+      inputRefs: [],
+      outputRefs: [],
+      evalRunRefs: [],
+      traceRefs: [],
+      startedAt: at,
+      completedAt: at,
+      metadata: { phase: "test" },
+    };
+
+    expect(updated.status).toBe("ready");
+    await expect(repository.getRun(run.id)).resolves.toEqual({
+      ...updated,
+      nodeRuns: [],
+    });
+    await expect(repository.listRuns({ domain: "generic" })).resolves.toEqual([{ ...updated, nodeRuns: [] }]);
+    await expect(repository.listRuns({ domain: genericRun.domain })).resolves.toEqual([genericRun]);
+
+    const withNode = await repository.appendNodeRun(run.id, nodeRun);
+
+    expect(withNode.nodeRuns).toEqual([nodeRun]);
+    expect(client.nodeRuns.get(run.id)).toHaveLength(1);
+    expect(client.queries.every((query) => Array.isArray(query.parameters))).toBe(true);
+    expect(client.queries.some((query) => query.parameters.length > 0)).toBe(true);
   });
 });

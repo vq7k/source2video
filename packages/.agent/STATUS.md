@@ -2,9 +2,9 @@
 
 ## 当前 actionable
 
-**Task 1 已完成**：Define Generic Persistence Contracts 已按 TDD 完成并准备提交；只包含 contracts/type-level store interfaces，未进入 Postgres migrations/runtime worker。
+**Store Lane Task 2/3 已完成**：Task 2 Postgres migrations 已提交，Task 3 workflow run repository 已完成并准备提交；不要 push。
 
-下一步：等待 Orchestrator review Task 1 commit / 派发 **Task 2: Add Postgres Migrations**。
+下一步：等待 Orchestrator review / 派发 Task 4 Artifact Store Abstraction 或 Task 5 Postgres Job Queue。
 
 ## 当前阶段
 
@@ -12,11 +12,11 @@ FrameworkWorker 持久身份已初始化；Phase -1 / Task 0 完成。generic fr
 
 ## 最近一次 session
 
-2026-06-05：完成 Task 1 generic persistence contracts；新增 `FrameworkStore` / repository type contracts、generic job/dataset records、artifact/eval/feedback persisted record types，并新增 `framework-store.test.ts` 覆盖 exports、method names、domain-agnostic naming。
+2026-06-05：完成 Store Lane Task 2/3。Task 2 新增 generic Postgres schema migration、migration helper 和 UI migration script；Task 3 新增 parameterized SQL workflow run repository，覆盖 put/get/list/appendNodeRun 与显式 JSON round-trip。
 
 ## 阻塞
 
-无 Task 1 代码阻塞。注意：当前工作树有未跟踪 WritingWorker readiness test，导致原样 `pnpm test` 失败；Task 1 单测、tracked runtime tests + Task 1 test、typecheck、diff check、domain scan 均通过。
+无代码阻塞。`pnpm test`、`pnpm typecheck`、`git diff --check` 和 framework package 业务命名扫描均通过。
 
 ## 引用
 
@@ -26,4 +26,6 @@ FrameworkWorker 持久身份已初始化；Phase -1 / Task 0 完成。generic fr
 - Task 0 handoff：`./sessions/2026-06-05-task-0-package-topology/handoff.md`
 - Task 0 Reconcile handoff：`./sessions/2026-06-05-task-0-reconcile/handoff.md`
 - Task 1 handoff：`./sessions/2026-06-05-task-1-generic-persistence-contracts/handoff.md`
+- Task 2/3 store lane handoff：`./sessions/2026-06-05-task-2-3-store-lane/handoff.md`
+- Writing readiness needs：`../../doc-maker/.agent/sessions/2026-06-05-writing-adapter-readiness/summary.md`
 - 本 Worker TODO：`./TODO.md`

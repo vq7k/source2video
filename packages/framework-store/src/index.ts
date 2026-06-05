@@ -8,6 +8,15 @@ import type { WorkflowFeedbackSignalRecord } from "@source2video/workflow-core/f
 import type { NodeRunRecord } from "@source2video/workflow-core/node";
 import type { WorkflowRunRecord, WorkflowRunStatus } from "@source2video/workflow-core/run";
 
+export type { FrameworkSqlClient, FrameworkSqlResult } from "./db";
+export {
+  frameworkMigrations,
+  runFrameworkStoreMigrations,
+  type FrameworkMigration,
+  type FrameworkMigrationClient,
+} from "./migrations";
+export { createPostgresWorkflowRunRepository } from "./repositories/workflow-runs";
+
 export type ListPage = {
   limit?: number;
   cursor?: string;
