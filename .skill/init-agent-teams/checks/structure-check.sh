@@ -4,10 +4,6 @@
 set -uo pipefail
 ROOT="${1:?用法: structure-check.sh <目标项目根>}"
 cd "$ROOT" || { echo "FAIL: 无法进入 $ROOT"; exit 2; }
-AGENT_DIR=".agent"
-if [ ! -d "$AGENT_DIR" ] && [ -d ".agents" ]; then
-  AGENT_DIR=".agents"
-fi
 
 fail=0
 chk() { # chk <描述> <test 命令...>
@@ -15,9 +11,9 @@ chk() { # chk <描述> <test 命令...>
 }
 
 echo "== B2-1 结构完整性 =="
-chk "$AGENT_DIR/SOUL.md 存在"   "test -f $AGENT_DIR/SOUL.md"
-chk "$AGENT_DIR/STATUS.md 存在" "test -f $AGENT_DIR/STATUS.md"
-chk "$AGENT_DIR/TODO.md 存在"   "test -f $AGENT_DIR/TODO.md"
+chk ".agent/SOUL.md 存在"   "test -f .agent/SOUL.md"
+chk ".agent/STATUS.md 存在" "test -f .agent/STATUS.md"
+chk ".agent/TODO.md 存在"   "test -f .agent/TODO.md"
 chk "PROJECT.md 存在"       "test -f PROJECT.md"
 chk "CLAUDE.md 存在"        "test -f CLAUDE.md"
 chk "AGENTS.md 存在"        "test -f AGENTS.md"
@@ -27,15 +23,28 @@ chk "CLAUDE.md → PROJECT.md 互指" "grep -q 'PROJECT.md' CLAUDE.md"
 chk "PROJECT.md → SOUL/catch-up 互指" "grep -qE 'SOUL.md|catch-up' PROJECT.md"
 
 echo "== B2-1 SOUL 四段齐 =="
-chk "SOUL 含『我是谁』" "grep -q '## 我是谁' $AGENT_DIR/SOUL.md"
-chk "SOUL 含『我不做』" "grep -q '## 我不做' $AGENT_DIR/SOUL.md"
-chk "SOUL 含『我做』"   "grep -q '## 我做' $AGENT_DIR/SOUL.md"
-chk "SOUL 含『我的边界』" "grep -q '## 我的边界' $AGENT_DIR/SOUL.md"
+chk "SOUL 含『我是谁』" "grep -q '## 我是谁' .agent/SOUL.md"
+chk "SOUL 含『我不做』" "grep -q '## 我不做' .agent/SOUL.md"
+chk "SOUL 含『我做』"   "grep -q '## 我做' .agent/SOUL.md"
+chk "SOUL 含『我的边界』" "grep -q '## 我的边界' .agent/SOUL.md"
 
 echo "== B2-2 STATUS 结构（不强求固定段名，宿主既有命名优先） =="
-total=$(grep -cE '^## ' "$AGENT_DIR/STATUS.md" 2>/dev/null || echo 0)
-chk "STATUS 分段 ≥4（实得 ${total}）" "test \"${total}\" -ge 4"
-chk "STATUS 含 catch-up readiness 锚点段" "grep -qiE '^## .*(actionable|当前|下一步|next|current|现在|now|todo)' $AGENT_DIR/STATUS.md"
+total=$(grep -cE '^## ' .agent/STATUS.md 2>/dev/null || echo 0)
+chk "STATUS 分段 ≥4（实得 $total）" "test \"$total\" -ge 4"
+chk "STATUS 含 catch-up readiness 锚点段" "grep -qiE '^## .*(actionable|当前|下一步|next|current|现在|now|todo)' .agent/STATUS.md"
+
+echo "== B2-3 工作区独立性（每角色 SOUL = <工作区>/.agent[s]/SOUL.md，不嵌套/不耦合根） =="
+nested=$(find . \( -path '*/node_modules' -o -path './.git' \) -prune -o -name SOUL.md -print 2>/dev/null | while IFS= read -r s; do
+  p=$(basename "$(dirname "$s")")
+  if [ "$p" != ".agent" ] && [ "$p" != ".agents" ]; then echo "$s"; fi
+done)
+if [ -z "$nested" ]; then
+  echo "PASS: 所有 SOUL.md 直接位于某 .agent[s]/ 工作区下（无嵌套耦合）"
+else
+  echo "FAIL: 下列 SOUL.md 嵌在 .agent[s]/ 子目录里 = 工作区耦合（子 Agent 无法独立进入工作区）："
+  echo "$nested" | sed 's/^/    /'
+  fail=1
+fi
 
 echo "----"
 if [ "$fail" -eq 0 ]; then echo "✅ structure-check 全 PASS"; else echo "❌ structure-check 有 FAIL（见上，按 SKILL.md B3 出待修复动作）"; fi

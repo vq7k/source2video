@@ -47,8 +47,8 @@ grep -rl "$TARGET" ~/.codex/sessions/ 2>/dev/null | head -50
 合并所有 SubAgent JSON → 去重 → 产出统一「项目历史画像」：
 - `project_profile`/`conventions` → 喂 A1 画像、`PROJECT.md`、`SOUL.md`「我做」
 - `division_signals` → A3 角色裁剪**证据**（仅辅助 human 判裂变，不替决策）
-- `decisions` → Optional agent 状态目录下的 `decisions/`
-- `pitfalls` → Optional agent 状态目录下的 `learned-rules.md`
+- `decisions` → Optional `.agent/decisions/`
+- `pitfalls` → Optional `.agent/learned-rules.md`
 - `current_state` → `STATUS.md`「当前 actionable / 最近一次 session」+ `TODO.md`
 
 ## 3. fallback

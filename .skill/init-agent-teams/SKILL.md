@@ -36,7 +36,8 @@
 
 ### A4 嵌入骨架（不覆盖原有）
 按裁剪结果从 `templates/` 取模板，**填 A1+A2 真实画像**（真模块名/栈/续接状态，不留占位符），落地目标项目：
-- Core 必产：agent 状态目录（新项目默认 `.agent/`；brownfield 已有 `.agents/` 则沿用）含 `{SOUL,STATUS,TODO}.md` + `PROJECT.md` + `CLAUDE.md`+`AGENTS.md` + `.skill/{catch-up,status-update}/SKILL.md`
+- Core 必产：`.agent/{SOUL,STATUS,TODO}.md` + `PROJECT.md` + `CLAUDE.md`+`AGENTS.md` + `.skill/{catch-up,status-update}/SKILL.md`
+- **每个常驻 Worker 的状态落在它自己的 cwd 下**（`<cwd>/.agent/`），一个 cwd 一个角色——遵「工作区硬规则」，不耦合根、不共享 cwd
 - 已有 `CLAUDE.md` → **追加**指向 PROJECT.md 的链路，**不覆盖**；冲突项标出让 human 裁
 - 绝不动业务代码、不删原有文件
 
@@ -46,11 +47,16 @@
 ### 裂变阶梯（A3 依据）
 | 档 | 何时 | 建什么 |
 |---|---|---|
-| ① 单 agent（默认） | 没有可分工的活 | 一个 agent 包圆，agent 状态目录自交接 |
+| ① 单 agent（默认） | 没有可分工的活 | 一个 agent 包圆，`.agent/` 自交接 |
 | ② 临时 SubAgent | 有独立活但**一次性** | 开 SubAgent 跑完即弃，**不立角色** |
-| ③ 常驻 Worker | 一块活是**持续迭代领域**（独立栈/文件域） | 建它的 agent 状态目录 + 写 SOUL + 纳入派活/汇报 |
+| ③ 常驻 Worker | 一块活是**持续迭代领域** + **有独立工作区**（一个能 cd 进去的专属目录作 cwd） | 在该 cwd 下建 `<cwd>/.agent/` + 写 SOUL + 纳入派活/汇报 |
 
-**①→③ 四判据**（够才裂）：边界清晰（能独立验收）· 会反复（非一次修）· 上下文该隔离（栈/文件域分开）· 值得并行。不够 → 留 ① 或走 ②。
+**①→③ 五判据**（全够才裂，缺一不立常驻）：边界清晰（能独立验收）· 会反复（非一次修）· 上下文该隔离 · 值得并行 · **有独立工作区**（专属目录作 cwd；无专属目录的横切职责不配常驻 Worker）。不够 → 留 ① 或走 ②。
+
+#### 工作区硬规则（拆分的地基，违反 = 拆分非法）
+- **cwd 唯一定位角色**：一个 cwd 只能对应**一个**角色。多角色共享一个 cwd（如都「从仓库根启动」）会让 catch-up「看 cwd 定角色」失效——**禁止**。
+- **状态必在工作区内**：每个常驻 Worker 的状态 = `<它的 cwd>/.agent/`（SOUL/STATUS/TODO 直接在此）。**禁止**把 Worker 状态嵌进主理的 `.agent/` 子目录、或集中堆在根（如 `.agent*/workers/<role>/`）——那是耦合，子 Agent 无法独立进入工作区。
+- **横切职责不配常驻**：部署 / 测试 / 运维等**横切整仓、无专属代码目录**的职责，**不该**做位置绑定的常驻 Worker；归主理（全局视角本就该协调），或按需派**临时 SubAgent**（给明确任务、跑完即弃、不占 cwd）。
 
 ---
 
@@ -62,7 +68,7 @@
 `bash <此 skill>/checks/structure-check.sh <目标项目根>` → 结构完整性硬检查（文件存在 / 互指对 / 段齐）。
 
 ### B2 健康判据五组（单一来源，init 也按它搭）
-1. **结构完整性**：agent 状态目录三件套在 · 三入口在且**互指对**（CLAUDE/AGENTS→PROJECT→SOUL）· SOUL 四段齐。
+1. **结构完整性 + 工作区独立性**：`.agent/` 三件套在 · 三入口**互指对**（CLAUDE/AGENTS→PROJECT→SOUL）· SOUL 四段齐 · **每个角色 SOUL = `<工作区>/.agent/SOUL.md`（直接在 `.agent[s]/` 下，不嵌子目录）· 无多角色共享 cwd · Worker 状态不耦合在根 `.agent*/`**（见「工作区硬规则」；structure-check B2-3 程序化查）。
 2. **自洽性**：角色边界**无重叠、无真空**（每职责唯一 owner）· catch-up 能 3 句话答「我是谁/上次/下一步」· STATUS 分段合理（≥4 段 + 含 actionable 锚点，宿主既有命名优先）。
 3. **brownfield 兼容**：不与原有 `CLAUDE.md`/约定冲突 · 没覆盖/删原有文件。
 4. **裂变 & 分层**（出报告给 human，**不自动改**）：单 agent 上是否堆 ≥2 块独立并行活（**该裂变**）· 已建 Worker 是否真有持续领域（**过度裂变**）· 规模 vs 已挂设施是否匹配（多 Worker 却无 decision-log = 缺口）。
@@ -90,7 +96,8 @@
 - **v0.1（2026-06-04）** 初版：init/check 两阶段 + 历史挖掘 + 自包含模板 + 裂变阶梯 + 成长型。
 - **dry-run（2026-06-04）** 跨样例项目只读验证 A1 侦察 + A2 历史 map（脱敏）走通；暴露 structure-check 的 STATUS 段校验对 brownfield 宿主命名过严，记入下方 §已知问题（见 `dry-run.md`）。
 - **v0.2（2026-06-04）** 修复上述：structure-check B2-2 STATUS 校验改为「分段 ≥4 + 含 actionable readiness 锚点（不强求固定段名）」，status-update / B2 措辞同步软化；母仓自身 self-check 由 14/15 → 全 PASS。已知问题清零。
-- **v0.3（2026-06-04）** 修复 brownfield 目录漂移：structure-check 支持既有 `.agents/`；修 Bash `${total}` 与中文右括号相邻导致 `set -u` unbound；source2video 快照标记未启用 Worker optional，避免旧项目 SOP 误导。
+- **实战（2026-06-05，外部项目）** 暴露重大缺陷：skill 把「工作区独立性」只写成软判据（「上下文该隔离」），未落成硬规则——照此可拆出 **cwd 共享 + 状态耦合根 `.agents/`** 的非法 Worker（横切职责 infra/qa 无独立工作区，却借仓库根 cwd、状态塞 `.agents/workers/`，致子 Agent 无法独立进入工作区、catch-up「看 cwd 定角色」失效）。
+- **v0.3（2026-06-05）** 修复上述：裂变判据 4→5 条（加「独立工作区」）+ 新增「工作区硬规则」段（cwd 唯一映射 / 状态必在 `<cwd>/.agent/` / 横切职责不配常驻）+ A4 嵌入规则 + catch-up cwd 唯一性 + B2 第 1 组并入工作区独立性 + structure-check 新增 B2-3 程序化检测（每 SOUL 必直接位于 `.agent[s]/` 下，否则判耦合）。已知问题清零。
 
 ## 已知问题 · 待清零
 （空 —— 理想态。发现即修，修进 changelog。）
