@@ -16,6 +16,7 @@ export {
   type FrameworkMigrationClient,
 } from "./migrations";
 export { createPostgresArtifactRepository, type ArtifactRepositoryOptions } from "./repositories/artifacts";
+export { createPostgresJobRepository, type JobRepositoryOptions } from "./repositories/jobs";
 export { createPostgresWorkflowRunRepository } from "./repositories/workflow-runs";
 
 export type ListPage = {
@@ -50,6 +51,7 @@ export type FrameworkJobRecord = {
   completedAt?: string;
   failedAt?: string;
   error?: string;
+  result?: WorkflowJsonObject;
   priority: number;
   payload: WorkflowJsonObject;
   attempts: number;
@@ -88,6 +90,7 @@ export type CompleteJobInput = {
   jobId: string;
   leaseId: string;
   completedAt?: string;
+  result?: WorkflowJsonObject;
   metadata?: WorkflowMetadata;
 };
 

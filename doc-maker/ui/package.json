@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "next lint",
     "framework:migrate": "node scripts/migrate-framework-store.mjs",
+    "framework:worker": "node scripts/run-framework-worker.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
