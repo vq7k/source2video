@@ -103,6 +103,7 @@
 
 - **实战 2（2026-06-05，外部项目自修后复检）** 暴露 check 盲区：v0.3 只验**根**工作区 + **结构**，不验**每个 worker 工作区入口齐备**、也不验**改名后引用一致性**——目标项目状态拍平后，`packages/` 缺本地 `CLAUDE/AGENTS`（子 Agent 进不去）、`.dockerignore`/文档/plan 仍引用旧 `.agents/` 路径与退休角色，check 全 PASS 却没抓出。
 - **v0.4（2026-06-05）** 修复上述：A4 + 工作区硬规则加「worker 工作区本地入口（CLAUDE+AGENTS）+ 改名后同步全项目引用」；structure-check 新增 **B2-4**（worker 入口齐备，WARN）+ **B2-5**（引用一致性 / 旧路径残留，WARN）；新增 `templates/worker-entry.template.md`。已知问题清零。
+- **v0.4 审查修正（2026-06-05）** 对抗 review（独立 subagent）抓出三项：① 母版自身违反刚立的 worker 入口规则（`infra` 缺 CLAUDE+AGENTS、`apps/biz`+`ai` 缺 AGENTS，被自己 B2-4 WARN）→ 补 4 入口至母版 B2-4 PASS（金标准以身作则）② B2-5 主范式弃裸 `-d` 改按根 SOUL **实际位置**判定 + 正则收紧到路径形态 `(/|$)`（不再误报含 `.agents` 的英文句）③ 消除 structure-check 重复 `B2-1` 编号。
 
 ## 已知问题 · 待清零
 （空 —— 理想态。发现即修，修进 changelog。）

@@ -22,7 +22,7 @@ chk ".skill/status-update 存在" "test -f .skill/status-update/SKILL.md"
 chk "CLAUDE.md → PROJECT.md 互指" "grep -q 'PROJECT.md' CLAUDE.md"
 chk "PROJECT.md → SOUL/catch-up 互指" "grep -qE 'SOUL.md|catch-up' PROJECT.md"
 
-echo "== B2-1 SOUL 四段齐 =="
+echo "== B2-1（续）SOUL 四段齐 =="
 chk "SOUL 含『我是谁』" "grep -q '## 我是谁' .agent/SOUL.md"
 chk "SOUL 含『我不做』" "grep -q '## 我不做' .agent/SOUL.md"
 chk "SOUL 含『我做』"   "grep -q '## 我做' .agent/SOUL.md"
@@ -30,7 +30,7 @@ chk "SOUL 含『我的边界』" "grep -q '## 我的边界' .agent/SOUL.md"
 
 echo "== B2-2 STATUS 结构（不强求固定段名，宿主既有命名优先） =="
 total=$(grep -cE '^## ' .agent/STATUS.md 2>/dev/null || echo 0)
-chk "STATUS 分段 ≥4（实得 ${total}）" "test \"$total\" -ge 4"
+chk "STATUS 分段 ≥4（实得 $total）" "test \"$total\" -ge 4"
 chk "STATUS 含 catch-up readiness 锚点段" "grep -qiE '^## .*(actionable|当前|下一步|next|current|现在|now|todo)' .agent/STATUS.md"
 
 echo "== B2-3 工作区独立性（每角色 SOUL = <工作区>/.agent[s]/SOUL.md，不嵌套/不耦合根） =="
@@ -62,8 +62,8 @@ else
 fi
 
 echo "== B2-5 引用一致性（改名后旧状态路径残留；WARN，不计 FAIL） =="
-if [ -d .agent ]; then otherp='\.agents'; else otherp='\.agent'; fi
-stale=$(grep -rlnE "${otherp}([^a-zA-Z0-9]|$)" . 2>/dev/null | grep -vE 'node_modules|/\.git/|/\.venv|/\.claude|/\.next|/\.idea|/worktrees/|site-packages|dist-info|/sessions/|retired-workers|/\.skill/init-agent-teams/' || true)
+if [ -f .agent/SOUL.md ]; then otherp='\.agents'; elif [ -f .agents/SOUL.md ]; then otherp='\.agent'; else otherp='\.agents'; fi
+stale=$(grep -rlnE "${otherp}(/|$)" . 2>/dev/null | grep -vE 'node_modules|/\.git/|/\.venv|/\.claude|/\.next|/\.idea|/worktrees/|site-packages|dist-info|/sessions/|retired-workers|/\.skill/init-agent-teams/' || true)
 if [ -z "$stale" ]; then
   echo "PASS: 无明显旧状态路径残留"
 else
