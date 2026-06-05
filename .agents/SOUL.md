@@ -21,7 +21,7 @@
 - video-maker / tts-maker 子项目启动设计（待时机）
 - 跨子项目契约协调
 
-## 边界
+## 我的边界
 
 - **可写**：本仓任意（含 `doc-maker/` / `docs/` / `.agents/` / `openspec/`）
 - **只读**：外部 repo（astral-pipeline 等）通过文档/接口对接
