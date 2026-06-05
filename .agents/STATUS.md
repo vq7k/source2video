@@ -4,32 +4,33 @@
 
 **无明示 actionable，等 user 拍板下一步**。候选：
 
-1. 部署 Writing Production v1 闭环收口到线上并做 smoke。
-2. 继续推进 v1 后 backlog：Rule Scope A/B、dataset draft、发布治理或业务 UI 打磨。
-3. video-maker / tts-maker 启动设计。
-4. s2v-core 抽离决断：ADR-023 触发条件 = 第 2 个 LLM workflow 子项目开工；当前未触发。
+1. 继续推进 v1 后 backlog：Rule Scope A/B、dataset draft、发布治理或业务 UI 打磨。
+2. video-maker / tts-maker 启动设计。
+3. s2v-core 抽离决断：ADR-023 触发条件 = 第 2 个 LLM workflow 子项目开工；当前未触发。
 
 **catch-up 后必升级**：当前无明确 actionable，agent 必问 user "现在该做什么"，不允许自行选择或默认关 session。
 
 ## 当前阶段
 
-**doc-maker Writing Production v1 本地闭环已完成**（2026-06-04）。
+**doc-maker Writing Production v1 已上线并完成线上闭环验收**（2026-06-05）。
 
 - 公网入口：`https://s2v.x-lin7.com`
 - 默认入口：`/` 重定向/进入 `/writing`
 - 部署：CodeUp `main` 自动触发云效流水线 `5006844`
-- 最近部署提交：`fda66ce fix(trace): preserve successful llm call status`
-- 线上已完成首次验收：`/api/health` ok；候选生成到 `candidate_ready`；Langfuse trace 存在并可从 `/framework` 跳转。
+- 最近部署提交：`1bfce63 docs(doc-maker): add writing research notes`；镜像 tag `1bfce634`
+- 最近部署流水线：`pipelineRunId=8` `SUCCESS`；VMDeploy order `63382768` `Success`
+- 线上验收：`/api/health` ok；`/writing` ok；`run_787ab96e` 到 `candidate_ready`，3 candidates，8 traces 全 `complete`；Langfuse trace `4b973abf-d46c-4539-ac6e-f79b50434fb5`，ScoreSink `complete`。
+- 生产网关修复：`ftai-caddy` 原 Caddyfile 缺少 `s2v.x-lin7.com` HTTPS site block；已在服务器 `/opt/from-fullstack-to-ai/infra/Caddyfile` 追加并 reload，备份为 `Caddyfile.bak.s2v-20260605-085109`。
 - 本次本地收口新增：`/writing` 反馈再来一轮 + Rule Package 草稿/发布；`/framework?traceId=` Trace 已定位 + ScoreSink 状态。
 - 本地验证：`pnpm test` 4 files / 7 tests passed；`pnpm e2e` 6 passed；`pnpm build` passed。
 
 ## 最近一次 session
 
-**2026-06-04 Writing Production v1 闭环收口**：完成用户要求的 1-4：口径收敛、测试补证、产品主路径、观测硬化。新增 e2e 证明 `/writing` 再来一轮 + Rule Package 发布、`/writing` 观测深链 + 返回恢复，以及 `/framework?traceId=` 定位 trace + ScoreSink 状态；`pnpm test` / `pnpm e2e` / `pnpm build` 全绿。
+**2026-06-05 Writing Production v1 上线验收**：本地测试/构建通过后 push CodeUp `main`，云效流水线 `8` 成功；修复生产 Caddy 缺失 `s2v.x-lin7.com` site block 导致的公网 TLS 握手失败；线上 health、页面、LLM runtime、业务 run、Langfuse/ScoreSink、framework 深链均验收通过。
 
-归档：[`sessions/2026-06-04-writing-v1-closure/`](./sessions/2026-06-04-writing-v1-closure/)
+归档：[`sessions/2026-06-05-writing-production-online/`](./sessions/2026-06-05-writing-production-online/)
 
-上一归档：[`sessions/2026-06-02-source2video-deploy/`](./sessions/2026-06-02-source2video-deploy/)
+上一归档：[`sessions/2026-06-04-writing-v1-closure/`](./sessions/2026-06-04-writing-v1-closure/)
 
 ## 阻塞
 

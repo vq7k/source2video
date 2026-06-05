@@ -11,14 +11,18 @@
 
 ## 候选里程碑（待 user 拍板优先级）
 
-- [ ] 部署 Writing Production v1 闭环收口到线上并做 smoke
 - [ ] doc-maker writing production 下一阶段范围决断：Topic/Round、规则包、评审闭环、业务 UI 打磨或稳定性增强
 - [ ] video-maker 启动设计（如推进：视觉决策 + Remotion 渲染编排）
 - [ ] tts-maker 启动设计（如推进，可能复用旧 harness，不一定 source2video-shaped）
 - [ ] s2v-core 抽离决断（ADR-023 触发条件 = 第 2 个 LLM workflow 子项目开工）
 
+## 已完成
+
+- [x] 2026-06-05 部署 Writing Production v1 闭环收口到线上并做 smoke / 业务验收
+
 ## 线上运维候选（按需）
 
+- [ ] 将 `s2v.x-lin7.com` Caddy site block 从生产手工配置同步回网关项目的长期 SOT，避免未来重建 `ftai-caddy` 丢失配置
 - [ ] 如继续用 Langfuse 页面验收，安装/启用 Codex Chrome Extension 后可复用 Chrome 登录态验证 trace 页面权限
 - [ ] 如需要回滚，重跑云效历史流水线；镜像 tag 使用 `${CI_COMMIT_ID}`，不是裸 `latest`
 
