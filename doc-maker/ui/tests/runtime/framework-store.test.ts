@@ -19,6 +19,7 @@ import type { WorkflowRunRecord } from "@source2video/workflow-core/run";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(dirname, "../../../..");
+const coreMigrationPath = "packages/framework-store/migrations/0001_framework_core.sql";
 
 function readText(relativePath: string): string {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
@@ -26,6 +27,10 @@ function readText(relativePath: string): string {
 
 function frameworkStoreSource(): string {
   return readText("packages/framework-store/src/index.ts");
+}
+
+function compactSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 describe("framework store contracts", () => {
@@ -202,5 +207,47 @@ describe("framework store contracts", () => {
     await expect(store.artifacts.getArtifact(artifact.id)).resolves.toEqual(artifact);
     await expect(store.jobs.leaseJob({ workerId: "worker_1", leaseDurationMs: 60_000 })).resolves.toEqual(lease);
     await expect(store.datasets.getDataset(dataset.id)).resolves.toEqual(dataset);
+  });
+
+  it("defines the generic Postgres schema migration", () => {
+    expect(fs.existsSync(path.join(repoRoot, coreMigrationPath))).toBe(true);
+
+    const sql = compactSql(readText(coreMigrationPath));
+    const requiredTables = [
+      "framework_workflow_runs",
+      "framework_node_runs",
+      "framework_artifacts",
+      "framework_feedback_events",
+      "framework_jobs",
+      "framework_datasets",
+      "framework_dataset_items",
+      "framework_experiments",
+      "framework_release_gates",
+      "framework_schema_migrations",
+    ];
+
+    for (const tableName of requiredTables) {
+      expect(sql, tableName).toContain(`create table if not exists ${tableName}`);
+    }
+
+    expect(sql).toContain("metadata_json jsonb not null default '{}'::jsonb");
+    expect(sql).toContain("payload_json jsonb not null");
+    expect(sql).toContain("create index if not exists framework_workflow_runs_domain_updated_at_idx");
+    expect(sql).toContain("create index if not exists framework_jobs_status_priority_run_after_idx");
+    expect(sql).toContain("references framework_workflow_runs(id)");
+    expect(sql).toContain("references framework_datasets(id)");
+    expect(sql).not.toMatch(/writing_|doc-maker|docmaker|writing/);
+  });
+
+  it("exports migration helpers and exposes a UI migration script", () => {
+    const source = readText("packages/framework-store/src/migrations.ts");
+    const packageJson = JSON.parse(readText("doc-maker/ui/package.json")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(source).toMatch(/\bframeworkMigrations\b/);
+    expect(source).toMatch(/\brunFrameworkStoreMigrations\b/);
+    expect(fs.existsSync(path.join(repoRoot, "doc-maker/ui/scripts/migrate-framework-store.mjs"))).toBe(true);
+    expect(packageJson.scripts["framework:migrate"]).toBe("node scripts/migrate-framework-store.mjs");
   });
 });
