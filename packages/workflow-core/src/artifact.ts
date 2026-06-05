@@ -1,4 +1,13 @@
-export type WorkflowMetadataValue = string | number | boolean | null;
+export type WorkflowJsonPrimitive = string | number | boolean | null;
+
+export type WorkflowJsonValue =
+  | WorkflowJsonPrimitive
+  | { [key: string]: WorkflowJsonValue }
+  | WorkflowJsonValue[];
+
+export type WorkflowJsonObject = Record<string, WorkflowJsonValue>;
+
+export type WorkflowMetadataValue = WorkflowJsonPrimitive;
 
 export type WorkflowMetadata = Record<string, WorkflowMetadataValue>;
 
@@ -10,6 +19,13 @@ export type ArtifactRef = {
   summary: string;
   materialRefs: string[];
   metadata: WorkflowMetadata;
+};
+
+export type ArtifactRecord = ArtifactRef & {
+  runId?: string;
+  nodeRunId?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export function artifactRef(input: {

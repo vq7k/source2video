@@ -15,6 +15,13 @@ export type WorkflowFeedbackSignal = {
   metadata: WorkflowMetadata;
 };
 
+export type WorkflowFeedbackSignalRecord = WorkflowFeedbackSignal & {
+  runId: string;
+  nodeRunId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export function workflowFeedbackSignal(input: {
   id: string;
   at: string;

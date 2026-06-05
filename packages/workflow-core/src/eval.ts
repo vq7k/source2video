@@ -1,3 +1,5 @@
+import type { WorkflowMetadata } from "@source2video/workflow-core/artifact";
+
 export type CoreEvalCheckStatus = "pass" | "warning" | "blocked";
 
 export type CoreEvalDimension = {
@@ -46,6 +48,13 @@ export type CoreEvalRun = {
   profileSource: string;
   riskSummary: string;
   candidateResults: CoreEvalCandidateResult[];
+};
+
+export type CoreEvalRunRecord = CoreEvalRun & {
+  runId?: string;
+  nodeRunId?: string;
+  createdAt: string;
+  metadata: WorkflowMetadata;
 };
 
 export type RunDeterministicEvalInput = {
