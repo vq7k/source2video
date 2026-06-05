@@ -2,8 +2,8 @@ import {
   runDeterministicEval,
   type CoreEvalAttribution,
   type CoreEvalDimension,
-} from "@doc-maker/workflow-core/eval";
-import { getScoreSink } from "@doc-maker/observability/score-sink";
+} from "@source2video/workflow-core/eval";
+import { getScoreSink } from "@source2video/observability/score-sink";
 import type { LLMCallTraceRecord } from "@doc-maker/writing-domain/framework-run-types";
 import type {
   CandidateRecord,

@@ -2,7 +2,7 @@ import type {
   FrameworkNodeRunRecord,
   LLMCallTraceRecord,
 } from "@doc-maker/writing-domain/framework-run-types";
-import type { CoreEvalRun } from "@doc-maker/workflow-core/eval";
+import type { CoreEvalRun } from "@source2video/workflow-core/eval";
 
 export const RULE_PATCH_DRAFT_LIMIT = 5;
 export const RULE_SNAPSHOT_RULE_LIMIT = 10;

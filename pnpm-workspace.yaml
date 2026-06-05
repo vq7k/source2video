@@ -1,0 +1,4 @@
+packages:
+  - "doc-maker/ui"
+  - "doc-maker/packages/*"
+  - "packages/*"

@@ -6,7 +6,7 @@ import {
   toLLMRuntimeSettingsView,
   type LLMRuntimeSettings,
 } from "@doc-maker/writing-domain/llm/settings";
-import { getTraceSink } from "@doc-maker/observability/trace-sink";
+import { getTraceSink } from "@source2video/observability/trace-sink";
 
 export const runtime = "nodejs";
 

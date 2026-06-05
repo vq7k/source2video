@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import type { LLMCallTraceRecord } from "@doc-maker/workflow-core/trace";
-import type { CoreEvalRun } from "@doc-maker/workflow-core/eval";
-import type { CreateLLMCallTraceInput } from "@doc-maker/workflow-core/trace";
-import type { WorkflowMetadata } from "@doc-maker/workflow-core/artifact";
+import type { LLMCallTraceRecord } from "@source2video/workflow-core/trace";
+import type { CoreEvalRun } from "@source2video/workflow-core/eval";
+import type { CreateLLMCallTraceInput } from "@source2video/workflow-core/trace";
+import type { WorkflowMetadata } from "@source2video/workflow-core/artifact";
 
 type LangfuseSettings = {
   configured: boolean;
@@ -65,6 +65,22 @@ function safeMetadata(metadata?: WorkflowMetadata) {
   return metadata ?? {};
 }
 
+function stringMetadata(metadata: WorkflowMetadata | undefined, key: string) {
+  const value = metadata?.[key];
+
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function workflowProject(metadata?: WorkflowMetadata) {
+  return stringMetadata(metadata, "project") ?? "workflow";
+}
+
+function traceTags(input: CreateLLMCallTraceInput) {
+  const project = stringMetadata(input.metadata, "project");
+
+  return [project, "workflow-core", input.nodeType].filter((tag): tag is string => Boolean(tag));
+}
+
 function langfuseInput(input: CreateLLMCallTraceInput) {
   return input.inputPayload ?? { refs: input.inputRefs };
 }
@@ -100,7 +116,7 @@ async function postIngestion(batch: LangfuseIngestionEvent[]) {
     body: JSON.stringify({
       batch,
       metadata: {
-        client: "doc-maker-ui",
+        client: "source2video-framework",
         mode: "workflow-core",
       },
     }),
@@ -126,7 +142,7 @@ export async function captureLangfuseLLMCall(input: CreateLLMCallTraceInput & { 
   const fullOutput = langfuseOutput(input);
   const baseMetadata = {
     ...safeMetadata(input.metadata),
-    project: "doc-maker",
+    project: workflowProject(input.metadata),
     runId: input.runId ?? null,
     nodeRunId: input.nodeRunId ?? null,
     nodeId: input.nodeType,
@@ -144,12 +160,12 @@ export async function captureLangfuseLLMCall(input: CreateLLMCallTraceInput & { 
       body: {
         id: traceId,
         timestamp: at,
-        name: `doc-maker:${input.runId ?? "adhoc"}`,
+        name: `${workflowProject(input.metadata)}:${input.runId ?? "adhoc"}`,
         input: fullInput,
         output: fullOutput,
         sessionId: input.runId,
         environment: settings.environment,
-        tags: ["doc-maker", "workflow-core", input.nodeType],
+        tags: traceTags(input),
         metadata: baseMetadata,
       },
     },
@@ -235,7 +251,7 @@ export async function writeLangfuseEvalScores(input: {
         comment: attribution.evidence.slice(0, 500),
         metadata: {
           ...safeMetadata(input.metadata),
-          project: "doc-maker",
+          project: workflowProject(input.metadata),
           runId: input.runId,
           nodeRunId: input.nodeRunId ?? input.trace.nodeRunId ?? null,
           nodeId: input.trace.nodeType,
@@ -309,7 +325,7 @@ export async function writeLangfuseFeedbackScore(input: {
         comment: input.comment?.slice(0, 500),
         metadata: {
           ...safeMetadata(input.metadata),
-          project: "doc-maker",
+          project: workflowProject(input.metadata),
           runId: input.runId,
           nodeRunId: input.nodeRunId ?? input.trace.nodeRunId ?? null,
           nodeId: input.trace.nodeType,

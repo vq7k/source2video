@@ -1,6 +1,6 @@
-import type { LLMCallTraceRecord } from "@doc-maker/workflow-core/trace";
-import type { CoreEvalRun } from "@doc-maker/workflow-core/eval";
-import type { WorkflowMetadata } from "@doc-maker/workflow-core/artifact";
+import type { LLMCallTraceRecord } from "@source2video/workflow-core/trace";
+import type { CoreEvalRun } from "@source2video/workflow-core/eval";
+import type { WorkflowMetadata } from "@source2video/workflow-core/artifact";
 
 export type WriteEvalScoresInput = {
   runId: string;

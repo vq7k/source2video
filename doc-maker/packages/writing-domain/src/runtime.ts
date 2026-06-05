@@ -4,7 +4,7 @@ import { getLLMProvider } from "@doc-maker/writing-domain/llm/provider";
 import type { CandidateDraft, LLMProviderResponse, CandidateGenerationDraft, PrecheckDraft } from "@doc-maker/writing-domain/llm/types";
 import { jsonRulePackageStore } from "@doc-maker/writing-domain/rule-package-store";
 import { jsonRunStore } from "@doc-maker/writing-domain/run-store";
-import { bindTraceToRun } from "@doc-maker/observability/trace-sink";
+import { bindTraceToRun } from "@source2video/observability/trace-sink";
 import {
   buildWritingCandidateEvalRun,
   scoreWritingCandidate,

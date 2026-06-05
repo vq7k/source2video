@@ -1,5 +1,5 @@
-import { writeLangfuseEvalScores, writeLangfuseFeedbackScore } from "@doc-maker/observability/langfuse";
-import type { ScoreSink } from "@doc-maker/workflow-core/score";
+import { writeLangfuseEvalScores, writeLangfuseFeedbackScore } from "@source2video/observability/langfuse";
+import type { ScoreSink } from "@source2video/workflow-core/score";
 
 export const localJsonScoreSink: ScoreSink = {
   name: "local-json",

@@ -1,4 +1,4 @@
-import type { ArtifactRef, WorkflowMetadata } from "@doc-maker/workflow-core/artifact";
+import type { ArtifactRef, WorkflowMetadata } from "@source2video/workflow-core/artifact";
 
 export type WorkflowFeedbackStatus = "unprocessed" | "compiled" | "dismissed";
 

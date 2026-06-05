@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { FrameworkNodeRunRecord, LLMCallTraceRecord } from "@doc-maker/writing-domain/framework-run-types";
-import { getLangfuseSettings, langfuseTraceUrl } from "@doc-maker/observability/langfuse";
+import { getLangfuseSettings, langfuseTraceUrl } from "@source2video/observability/langfuse";
 import { readLLMRuntimeSettings, toLLMRuntimeSettingsView } from "@doc-maker/writing-domain/llm/settings";
 import { listWritingRuns } from "@doc-maker/writing-domain/runtime";
 import type {

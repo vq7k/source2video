@@ -1,11 +1,11 @@
-import { artifactRef } from "@doc-maker/workflow-core/artifact";
-import type { ArtifactRef } from "@doc-maker/workflow-core/artifact";
-import type { CoreEvalRun } from "@doc-maker/workflow-core/eval";
-import { workflowFeedbackSignal } from "@doc-maker/workflow-core/feedback";
-import { createNodeRunRecord } from "@doc-maker/workflow-core/node";
-import type { WorkflowRunStatus } from "@doc-maker/workflow-core/run";
-import { workflowRunRecord } from "@doc-maker/workflow-core/run";
-import { workflowSnapshotRef } from "@doc-maker/workflow-core/snapshot";
+import { artifactRef } from "@source2video/workflow-core/artifact";
+import type { ArtifactRef } from "@source2video/workflow-core/artifact";
+import type { CoreEvalRun } from "@source2video/workflow-core/eval";
+import { workflowFeedbackSignal } from "@source2video/workflow-core/feedback";
+import { createNodeRunRecord } from "@source2video/workflow-core/node";
+import type { WorkflowRunStatus } from "@source2video/workflow-core/run";
+import { workflowRunRecord } from "@source2video/workflow-core/run";
+import { workflowSnapshotRef } from "@source2video/workflow-core/snapshot";
 import type {
   CandidateRecord,
   HumanFeedbackRecord,

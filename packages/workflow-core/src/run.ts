@@ -1,8 +1,8 @@
-import type { ArtifactRef, WorkflowMetadata } from "@doc-maker/workflow-core/artifact";
-import type { CoreEvalRun } from "@doc-maker/workflow-core/eval";
-import type { WorkflowFeedbackSignal } from "@doc-maker/workflow-core/feedback";
-import type { NodeRunRecord } from "@doc-maker/workflow-core/node";
-import type { WorkflowSnapshotRef } from "@doc-maker/workflow-core/snapshot";
+import type { ArtifactRef, WorkflowMetadata } from "@source2video/workflow-core/artifact";
+import type { CoreEvalRun } from "@source2video/workflow-core/eval";
+import type { WorkflowFeedbackSignal } from "@source2video/workflow-core/feedback";
+import type { NodeRunRecord } from "@source2video/workflow-core/node";
+import type { WorkflowSnapshotRef } from "@source2video/workflow-core/snapshot";
 
 export type WorkflowRunStatus = "draft" | "running" | "ready" | "feedback" | "finalized" | "failed";
 

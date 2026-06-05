@@ -4,8 +4,8 @@ import type {
   FrameworkNodeRunRecord,
   LLMCallTraceRecord,
 } from "@doc-maker/writing-domain/framework-run-types";
-import { getTraceSink } from "@doc-maker/observability/trace-sink";
-import { createNodeRunId } from "@doc-maker/workflow-core/node";
+import { getTraceSink } from "@source2video/observability/trace-sink";
+import { createNodeRunId } from "@source2video/workflow-core/node";
 import type { LLMProviderResponse } from "@doc-maker/writing-domain/llm/types";
 import type {
   CandidateRecord,

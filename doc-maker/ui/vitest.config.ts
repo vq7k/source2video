@@ -13,8 +13,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@doc-maker/workflow-core": path.resolve(dirname, "../packages/workflow-core/src"),
-      "@doc-maker/observability": path.resolve(dirname, "../packages/observability/src"),
+      "@source2video/workflow-core": path.resolve(dirname, "../../packages/workflow-core/src"),
+      "@source2video/observability": path.resolve(dirname, "../../packages/observability/src"),
       "@doc-maker/writing-domain": path.resolve(dirname, "../packages/writing-domain/src"),
       "@": dirname,
     },

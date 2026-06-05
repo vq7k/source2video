@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { localJsonTraceSink } from "@doc-maker/observability/trace-sink";
+import { localJsonTraceSink } from "@source2video/observability/trace-sink";
 
 const baseTraceInput = {
   provider: "openai-compatible",

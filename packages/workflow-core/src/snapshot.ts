@@ -1,4 +1,4 @@
-import type { WorkflowMetadata } from "@doc-maker/workflow-core/artifact";
+import type { WorkflowMetadata } from "@source2video/workflow-core/artifact";
 
 export type WorkflowSnapshotRef = {
   id: string;

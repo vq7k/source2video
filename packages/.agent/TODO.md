@@ -2,7 +2,7 @@
 
 ## 当前 in-progress
 
-- [ ] Task 0: Package Topology Split，接手 `codex/framework-topology` 未提交 WIP，完成 root `packages/` 拓扑迁移、验证并提交
+- [ ] 等待 Orchestrator review Task 0 Reconcile commit / 派发 Task 1
 
 ## 下一候选
 
@@ -11,6 +11,6 @@
 
 ## 质量门禁
 
-- [ ] contract tests 先红后绿
-- [ ] 禁止 framework schema / package API 出现业务域命名
-- [ ] 修改跨 package exports 后运行相关 typecheck / unit tests
+- [x] Task 0 topology contract test 先红后绿
+- [x] 禁止 framework schema / package API 出现业务域命名
+- [x] 修改跨 package exports 后运行相关 typecheck / unit tests

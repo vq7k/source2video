@@ -1,4 +1,4 @@
-import type { LLMCallTraceRecord } from "@doc-maker/workflow-core/trace";
+import type { LLMCallTraceRecord } from "@source2video/workflow-core/trace";
 
 export type FrameworkLayer = "L1" | "L2" | "L3";
 
@@ -28,7 +28,7 @@ export type FrameworkEvalRun = {
   checks: FrameworkEvalCheck[];
 };
 
-export type { LLMCallTraceRecord } from "@doc-maker/workflow-core/trace";
+export type { LLMCallTraceRecord } from "@source2video/workflow-core/trace";
 
 export type FrameworkNodeRunRecord = {
   id: string;

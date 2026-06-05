@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { captureLangfuseLLMCall, getLangfuseSettings } from "@doc-maker/observability/langfuse";
-import type { LLMCallTraceRecord } from "@doc-maker/workflow-core/trace";
-import { createNodeRunId } from "@doc-maker/workflow-core/node";
-import type { CreateLLMCallTraceInput, TraceSink } from "@doc-maker/workflow-core/trace";
+import { captureLangfuseLLMCall, getLangfuseSettings } from "@source2video/observability/langfuse";
+import type { LLMCallTraceRecord } from "@source2video/workflow-core/trace";
+import { createNodeRunId } from "@source2video/workflow-core/node";
+import type { CreateLLMCallTraceInput, TraceSink } from "@source2video/workflow-core/trace";
 
-export type { CreateLLMCallTraceInput, TraceSink } from "@doc-maker/workflow-core/trace";
+export type { CreateLLMCallTraceInput, TraceSink } from "@source2video/workflow-core/trace";
 
 function now() {
   return new Date().toISOString();
