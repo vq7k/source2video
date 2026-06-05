@@ -17,6 +17,8 @@ RUN npm config set registry https://registry.npmmirror.com \
   && npm install -g pnpm@10.33.0
 
 COPY --from=deps /app/doc-maker/ui/node_modules ./doc-maker/ui/node_modules
+COPY Dockerfile ./Dockerfile
+COPY packages ./packages
 COPY doc-maker/packages ./doc-maker/packages
 COPY doc-maker/ui ./doc-maker/ui
 

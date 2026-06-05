@@ -89,4 +89,10 @@ describe("framework package topology", () => {
 
     expect(businessMetadata).toEqual([]);
   });
+
+  it("includes root framework packages in the production Docker build context", () => {
+    const dockerfile = readText("Dockerfile");
+
+    expect(dockerfile).toContain("COPY packages ./packages");
+  });
 });
