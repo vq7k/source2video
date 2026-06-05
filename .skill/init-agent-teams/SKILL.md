@@ -38,6 +38,7 @@
 按裁剪结果从 `templates/` 取模板，**填 A1+A2 真实画像**（真模块名/栈/续接状态，不留占位符），落地目标项目：
 - Core 必产：`.agent/{SOUL,STATUS,TODO}.md` + `PROJECT.md` + `CLAUDE.md`+`AGENTS.md` + `.skill/{catch-up,status-update}/SKILL.md`
 - **每个常驻 Worker 的状态落在它自己的 cwd 下**（`<cwd>/.agent/`），一个 cwd 一个角色——遵「工作区硬规则」，不耦合根、不共享 cwd
+- **每个 Worker 工作区也要建本地入口** `<cwd>/CLAUDE.md` + `<cwd>/AGENTS.md`（指向根 `PROJECT.md` + 本地 `.agent/SOUL.md`）——否则 agent 进该 cwd 时 catch-up「cat CLAUDE.md」落空、非 Claude runtime 无引导（见 `templates/worker-entry.template.md`）
 - 已有 `CLAUDE.md` → **追加**指向 PROJECT.md 的链路，**不覆盖**；冲突项标出让 human 裁
 - 绝不动业务代码、不删原有文件
 
@@ -57,6 +58,7 @@
 - **cwd 唯一定位角色**：一个 cwd 只能对应**一个**角色。多角色共享一个 cwd（如都「从仓库根启动」）会让 catch-up「看 cwd 定角色」失效——**禁止**。
 - **状态必在工作区内**：每个常驻 Worker 的状态 = `<它的 cwd>/.agent/`（SOUL/STATUS/TODO 直接在此）。**禁止**把 Worker 状态嵌进主理的 `.agent/` 子目录、或集中堆在根（如 `.agent*/workers/<role>/`）——那是耦合，子 Agent 无法独立进入工作区。
 - **横切职责不配常驻**：部署 / 测试 / 运维等**横切整仓、无专属代码目录**的职责，**不该**做位置绑定的常驻 Worker；归主理（全局视角本就该协调），或按需派**临时 SubAgent**（给明确任务、跑完即弃、不占 cwd）。
+- **入口齐备 + 引用同步**：每个 Worker 工作区除 `.agent/` 外还要有本地 `CLAUDE.md`+`AGENTS.md`，子 Agent 才能真正「独立进入工作区 catch-up」（缺入口 = 拆了角色却进不去）；改名 / 搬迁状态目录后，必须同步全项目引用（`.dockerignore`/`.gitignore`/文档/plan 里的旧路径与旧角色名），否则断链。
 
 ---
 
@@ -65,10 +67,10 @@
 > check 是**给 human 的体检仪**：agent 只递报告，**裁决在 human**。
 
 ### B1 程序化硬校验
-`bash <此 skill>/checks/structure-check.sh <目标项目根>` → 结构完整性硬检查（文件存在 / 互指对 / 段齐）。
+`bash <此 skill>/checks/structure-check.sh <目标项目根>` → B2-1~B2-5：结构完整性 / STATUS / 工作区独立性 / worker 入口齐备 / 引用一致性（后两者 WARN 给 human 核对）。
 
 ### B2 健康判据五组（单一来源，init 也按它搭）
-1. **结构完整性 + 工作区独立性**：`.agent/` 三件套在 · 三入口**互指对**（CLAUDE/AGENTS→PROJECT→SOUL）· SOUL 四段齐 · **每个角色 SOUL = `<工作区>/.agent/SOUL.md`（直接在 `.agent[s]/` 下，不嵌子目录）· 无多角色共享 cwd · Worker 状态不耦合在根 `.agent*/`**（见「工作区硬规则」；structure-check B2-3 程序化查）。
+1. **结构完整性 + 工作区独立性 + 入口齐备**：`.agent/` 三件套在 · 根三入口**互指对** · SOUL 四段齐 · 每角色 SOUL 直接在 `.agent[s]/` 下（不嵌子目录 / 不共享 cwd / 不耦合根；B2-3 查）· **每个 Worker 工作区有本地 `CLAUDE.md`+`AGENTS.md` 入口**（B2-4 查，缺=子 Agent 进不去）· **改名后全项目无旧路径 / 旧角色残留引用**（B2-5 查 + human 核对 `.dockerignore`/文档/plan）。
 2. **自洽性**：角色边界**无重叠、无真空**（每职责唯一 owner）· catch-up 能 3 句话答「我是谁/上次/下一步」· STATUS 分段合理（≥4 段 + 含 actionable 锚点，宿主既有命名优先）。
 3. **brownfield 兼容**：不与原有 `CLAUDE.md`/约定冲突 · 没覆盖/删原有文件。
 4. **裂变 & 分层**（出报告给 human，**不自动改**）：单 agent 上是否堆 ≥2 块独立并行活（**该裂变**）· 已建 Worker 是否真有持续领域（**过度裂变**）· 规模 vs 已挂设施是否匹配（多 Worker 却无 decision-log = 缺口）。
@@ -98,7 +100,9 @@
 - **v0.2（2026-06-04）** 修复上述：structure-check B2-2 STATUS 校验改为「分段 ≥4 + 含 actionable readiness 锚点（不强求固定段名）」，status-update / B2 措辞同步软化；母仓自身 self-check 由 14/15 → 全 PASS。已知问题清零。
 - **实战（2026-06-05，外部项目）** 暴露重大缺陷：skill 把「工作区独立性」只写成软判据（「上下文该隔离」），未落成硬规则——照此可拆出 **cwd 共享 + 状态耦合根 `.agents/`** 的非法 Worker（横切职责 infra/qa 无独立工作区，却借仓库根 cwd、状态塞 `.agents/workers/`，致子 Agent 无法独立进入工作区、catch-up「看 cwd 定角色」失效）。
 - **v0.3（2026-06-05）** 修复上述：裂变判据 4→5 条（加「独立工作区」）+ 新增「工作区硬规则」段（cwd 唯一映射 / 状态必在 `<cwd>/.agent/` / 横切职责不配常驻）+ A4 嵌入规则 + catch-up cwd 唯一性 + B2 第 1 组并入工作区独立性 + structure-check 新增 B2-3 程序化检测（每 SOUL 必直接位于 `.agent[s]/` 下，否则判耦合）。已知问题清零。
-- **v0.4（2026-06-05）** 修复 structure-check 在 `.agent/STATUS.md` 缺失时 `set -u` 误把 `$total）` 解析成异常变量的问题：改为 `${total}`。
+
+- **实战 2（2026-06-05，外部项目自修后复检）** 暴露 check 盲区：v0.3 只验**根**工作区 + **结构**，不验**每个 worker 工作区入口齐备**、也不验**改名后引用一致性**——目标项目状态拍平后，`packages/` 缺本地 `CLAUDE/AGENTS`（子 Agent 进不去）、`.dockerignore`/文档/plan 仍引用旧 `.agents/` 路径与退休角色，check 全 PASS 却没抓出。
+- **v0.4（2026-06-05）** 修复上述：A4 + 工作区硬规则加「worker 工作区本地入口（CLAUDE+AGENTS）+ 改名后同步全项目引用」；structure-check 新增 **B2-4**（worker 入口齐备，WARN）+ **B2-5**（引用一致性 / 旧路径残留，WARN）；新增 `templates/worker-entry.template.md`。已知问题清零。
 
 ## 已知问题 · 待清零
 （空 —— 理想态。发现即修，修进 changelog。）
