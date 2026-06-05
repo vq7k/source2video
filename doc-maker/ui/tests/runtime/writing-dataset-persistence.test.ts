@@ -15,6 +15,7 @@ import {
   recordHumanFeedback,
 } from "@doc-maker/writing-domain/runtime";
 import type { CreateWritingRunInput, WritingRunRecord } from "@doc-maker/writing-domain/types";
+import { setWritingDatasetDraftRepositoryProviderForTests } from "@/lib/writing-dataset-draft-repository";
 import type {
   FrameworkDatasetItem,
   FrameworkDatasetRecord,
@@ -175,19 +176,16 @@ describe("writing dataset draft persistence", () => {
     const routeModule = (await import("../../app/api/writing-runs/[runId]/dataset-drafts/route")) as {
       POST: (
         request: Request,
-        context: { params: { runId: string } },
+        context: { params: Promise<{ runId: string }> },
       ) => Promise<Response>;
-      setWritingDatasetDraftRepositoryProviderForTests: (
-        provider: (() => FakeDatasetRepository) | null,
-      ) => void;
     };
 
-    routeModule.setWritingDatasetDraftRepositoryProviderForTests(() => repository);
+    setWritingDatasetDraftRepositoryProviderForTests(() => repository);
     try {
       const response = await routeModule.POST(new Request("http://localhost/api/writing-runs/run-id/dataset-drafts", {
         method: "POST",
       }), {
-        params: { runId: run.id },
+        params: Promise.resolve({ runId: run.id }),
       });
       const body = await response.json();
 
@@ -213,7 +211,7 @@ describe("writing dataset draft persistence", () => {
       );
       expect(repository.appended).toHaveLength(1);
     } finally {
-      routeModule.setWritingDatasetDraftRepositoryProviderForTests(null);
+      setWritingDatasetDraftRepositoryProviderForTests(null);
     }
   });
 
@@ -221,18 +219,15 @@ describe("writing dataset draft persistence", () => {
     const routeModule = (await import("../../app/api/writing-runs/[runId]/dataset-drafts/route")) as {
       POST: (
         request: Request,
-        context: { params: { runId: string } },
+        context: { params: Promise<{ runId: string }> },
       ) => Promise<Response>;
-      setWritingDatasetDraftRepositoryProviderForTests: (
-        provider: (() => FakeDatasetRepository) | null,
-      ) => void;
     };
-    routeModule.setWritingDatasetDraftRepositoryProviderForTests(null);
+    setWritingDatasetDraftRepositoryProviderForTests(null);
 
     const response = await routeModule.POST(new Request("http://localhost/api/writing-runs/run-id/dataset-drafts", {
       method: "POST",
     }), {
-      params: { runId: "missing-run" },
+      params: Promise.resolve({ runId: "missing-run" }),
     });
     const body = await response.json();
 

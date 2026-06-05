@@ -1,35 +1,19 @@
 import { NextResponse } from "next/server";
 
 import { readWritingRun } from "@doc-maker/writing-domain/runtime";
-import {
-  persistWritingDatasetDraftsForRun,
-  type WritingDatasetDraftRepository,
-} from "@doc-maker/writing-domain/dataset-draft-persistence";
+import { persistWritingDatasetDraftsForRun } from "@doc-maker/writing-domain/dataset-draft-persistence";
+import { getWritingDatasetDraftRepository } from "@/lib/writing-dataset-draft-repository";
 
 type RouteContext = {
-  params: Promise<{ runId: string }> | { runId: string };
+  params: Promise<{ runId: string }>;
 };
 
-type RepositoryProvider = () => WritingDatasetDraftRepository | null;
-
-let repositoryProvider: RepositoryProvider | null = null;
-
-export function setWritingDatasetDraftRepositoryProviderForTests(
-  provider: RepositoryProvider | null,
-) {
-  repositoryProvider = provider;
-}
-
-function getRepository() {
-  return repositoryProvider ? repositoryProvider() : null;
-}
-
 async function resolveParams(context: RouteContext) {
-  return context.params instanceof Promise ? await context.params : context.params;
+  return context.params;
 }
 
 export async function POST(_request: Request, context: RouteContext) {
-  const repository = getRepository();
+  const repository = getWritingDatasetDraftRepository();
   if (!repository) {
     return NextResponse.json(
       {
