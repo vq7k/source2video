@@ -1,6 +1,6 @@
 # skill: init-agent-teams
 
-> version: v0.4 · status: 成长中（持续修复，非累加）
+> version: v0.5 · status: 成长中（持续修复，非累加）
 > ⚠️ 本 SOP 仍在迭代。**用前先读 §已知问题；用后必按 §回写闭环 回写。**
 
 把一套验证过的「多 Agent 协作骨架」装到**已存在的项目**里（init），并按需体检（check）。
@@ -79,6 +79,9 @@
 ### B3 出体检报告
 每条 pass/fail + **不过项修法**；fail → **待修复动作，修完即清**（非累加）。第 4 组裂变/分层仅作**建议**呈现，human 裁。
 
+### B4 行为 eval（structure 之外，验子 Agent 真实行为）
+structure-check 只验**静态结构**——子 Agent 进工作区仍可能是白板（不 catch-up、不知道自己是谁），结构全 PASS 也抓不到。**行为**单独 eval，见 [`agent-eval.md`](./agent-eval.md)。一条铁律：**测子 Agent 必须中性启动**（prompt 只给任务、不喂角色、不暗示「先 catch-up」），否则测的是「服从」不是「自主」，必然假过。
+
 ---
 
 ## 成长型自进化
@@ -104,6 +107,9 @@
 - **实战 2（2026-06-05，外部项目自修后复检）** 暴露 check 盲区：v0.3 只验**根**工作区 + **结构**，不验**每个 worker 工作区入口齐备**、也不验**改名后引用一致性**——目标项目状态拍平后，`packages/` 缺本地 `CLAUDE/AGENTS`（子 Agent 进不去）、`.dockerignore`/文档/plan 仍引用旧 `.agents/` 路径与退休角色，check 全 PASS 却没抓出。
 - **v0.4（2026-06-05）** 修复上述：A4 + 工作区硬规则加「worker 工作区本地入口（CLAUDE+AGENTS）+ 改名后同步全项目引用」；structure-check 新增 **B2-4**（worker 入口齐备，WARN）+ **B2-5**（引用一致性 / 旧路径残留，WARN）；新增 `templates/worker-entry.template.md`。已知问题清零。
 - **v0.4 审查修正（2026-06-05）** 对抗 review（独立 subagent）抓出三项：① 母版自身违反刚立的 worker 入口规则（`infra` 缺 CLAUDE+AGENTS、`apps/biz`+`ai` 缺 AGENTS，被自己 B2-4 WARN）→ 补 4 入口至母版 B2-4 PASS（金标准以身作则）② B2-5 主范式弃裸 `-d` 改按根 SOUL **实际位置**判定 + 正则收紧到路径形态 `(/|$)`（不再误报含 `.agents` 的英文句）③ 消除 structure-check 重复 `B2-1` 编号。
+
+- **实战 3（2026-06-05，外部项目子 Agent 不符预期）** 暴露 check 只验静态结构、不验行为：子 Agent 进工作区不 catch-up（白板），structure 全 PASS 也抓不到；且 skill 没教「多 Agent 行为怎么 eval」，外部 main 用提示词喂角色去测 → 测的是服从非自主 → 假过没测出。
+- **v0.5（2026-06-05）** 补行为 eval：新增 [`agent-eval.md`](./agent-eval.md)（六条通用方法：中性启动 / fresh context / negative case / 判据隐藏跨家评审 / pass^N / programmatic 优先，抽象自 `.eval/` + A/B 实战）；SKILL 加 B4 指向它，铁律「测子 Agent 必中性启动」。
 
 ## 已知问题 · 待清零
 （空 —— 理想态。发现即修，修进 changelog。）
