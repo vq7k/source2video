@@ -2,11 +2,24 @@
 
 ## 当前 actionable
 
-**等待 FrameworkWorker 回报**：Task 0 Package Topology Split 已派发给 FrameworkWorker。handoff 位于 `packages/.agent/sessions/2026-06-05-task-0-package-topology/handoff.md`。当前分支 `codex/framework-topology` 有未提交 WIP，由 FrameworkWorker 接手完成、验证并提交；Orchestrator 暂停直接开发，只做验收。
+**repository wiring 进行中：8A 已验收，8B 待派**。任务拆三段：8A（FrameworkWorker，pg adapter）✅ / 8B（WritingWorker，生产 provider 接线）⏳ / 8C（真实本地 PG 端到端，依赖 user 拍 PG 来源）。
+
+**Task 8A Postgres SQL client adapter 已验收通过**：FrameworkWorker 提交 `970e289 feat(framework): add postgres sql client adapter`。新增 `createPgSqlClient`（pg.Pool → FrameworkSqlClient，lifecycle-aware close）+ `pg`/`@types/pg` 依赖，export 到 framework-store index；5 个 TDD 测试用 fake pool（无真实 PG），commit 仅含 framework-store 4 文件。Orchestrator code review + 范围/命名核查通过（adapter 业务无关）；Worker 自验 targeted 5/5、全量 30 tests 无回归、typecheck 0、diff 干净。已提交未 push。
+
+**lockfile 裁决（Orchestrator 已拍板，关闭升级）**：仓库从未 track `pnpm-lock.yaml`，且 `Dockerfile` 用 `pnpm install --no-frozen-lockfile` —— Docker build 不依赖 lockfile，新增 `pg` 会在 build 时重新 resolve。故**保持现状不纳管 lockfile**，与既有约定一致、零部署风险。
+
+下一步：派 **Task 8B（WritingWorker）**——把 `createPgSqlClient` 接进 Writing dataset draft 生产 provider（读 env → `createPostgresDatasetRepository` → 注入 `getWritingDatasetDraftRepository`），让 dataset API 从 `503 repository_unconfigured` 进入真实 persistence path。**8B 必须把 `pg` 加进 `next.config.ts` 的 `serverExternalPackages`**（FrameworkWorker 交棒提醒，避免 Next 打包 pg）；env 名按 Infra 报告用 `FRAMEWORK_DATABASE_URL`。8B 用 fake/test SQL client 做 integration test，不依赖真实 PG。
+
+**Task 8C（真实本地 PG migration + 端到端落库验证）**依赖 8B + **升级 user 拍 PG 来源**：复用另一项目 PG 建独立库 `source2video_framework` vs 一次性 `docker run postgres:16` dev 容器；本机还需装 `psql`（migrate 脚本 shell out psql）。
+
+本 session 前置回报（QA/Infra 临时 SubAgent 已回报）：
+- `.agent/sessions/2026-06-05-qa-task0-review/report.md` — Task 0 `bda65dd` 拓扑 **PASS**（topology 5/5、test 30/30、typecheck 0）
+- `.agent/sessions/2026-06-05-infra-local-data-plane-readiness/report.md` — 唯一必需 env=`FRAMEWORK_DATABASE_URL`；artifact filesystem first；S3/MinIO=`ARTIFACT_STORE_*`（后置）
+- `packages/.agent/sessions/2026-06-06-task-8a-pg-sql-client/handoff.md`
 
 ## 当前阶段
 
-**持久 Agent team 初始化完成；doc-maker Writing Production v1 已上线并完成线上闭环验收**（2026-06-05）。
+**持久 Agent team 运行中；Writing Production v1 已上线；framework data plane 本地闭环（Postgres dataset persistence）已在真实 PG 验证打通**（2026-06-06）。
 
 Agent team：
 
@@ -24,8 +37,8 @@ Agent team：
 - 公网入口：`https://s2v.x-lin7.com`
 - 默认入口：`/` 重定向/进入 `/writing`
 - 部署：CodeUp `main` 自动触发云效流水线 `5006844`
-- 最近部署提交：`1bfce63 docs(doc-maker): add writing research notes`；镜像 tag `1bfce634`
-- 最近部署流水线：`pipelineRunId=8` `SUCCESS`；VMDeploy order `63382768` `Success`
+- 最近部署提交：`521f3c2 fix(deploy): include framework packages in docker build`；镜像 tag `521f3c25`
+- 最近部署流水线：`pipelineRunId=11` `SUCCESS`；镜像构建 `SUCCESS`；部署 `SUCCESS`
 - 线上验收：`/api/health` ok；`/writing` ok；`run_787ab96e` 到 `candidate_ready`，3 candidates，8 traces 全 `complete`；Langfuse trace `4b973abf-d46c-4539-ac6e-f79b50434fb5`，ScoreSink `complete`。
 - 生产网关修复：`ftai-caddy` 原 Caddyfile 缺少 `s2v.x-lin7.com` HTTPS site block；已在服务器 `/opt/from-fullstack-to-ai/infra/Caddyfile` 追加并 reload，备份为 `Caddyfile.bak.s2v-20260605-085109`。
 - 本次本地收口新增：`/writing` 反馈再来一轮 + Rule Package 草稿/发布；`/framework?traceId=` Trace 已定位 + ScoreSink 状态。
@@ -33,7 +46,25 @@ Agent team：
 
 ## 最近一次 session
 
-**2026-06-05 派发 FrameworkWorker Task 0**：Orchestrator 越界启动了 package topology WIP 后暂停开发，将 `codex/framework-topology` 未提交 WIP 正式移交 FrameworkWorker。FrameworkWorker 应从 `packages/` catch-up，读取 handoff，完成 root `packages/` 拓扑迁移、验证并提交，不 push。
+**2026-06-06 推进 repository wiring（QA/Infra 回报 + Task 8A 验收）**：(1) 派 QA 临时 SubAgent 复验 Task 0 `bda65dd` → PASS（拓扑干净，topology 5/5、test 30/30、typecheck 0；唯一非阻塞发现：Dockerfile `COPY packages` 是后续 `521f3c2` 才补，HEAD 已修复）。(2) 派 Infra 临时 SubAgent 出 local data plane readiness → 唯一必需 env=`FRAMEWORK_DATABASE_URL`，Postgres 接线代码已就绪，artifact filesystem first。(3) 设计 repository wiring 拆 8A/8B/8C，派 FrameworkWorker Task 8A：subagent 中途 ECONNRESET 但已完整完成并提交 `970e289`，自验通过、状态收尾、主动升级 lockfile。(4) Orchestrator 验收 8A 通过；裁决 lockfile **不纳管**（Dockerfile 用 `--no-frozen-lockfile`，零风险）。下一步派 8B。
+
+**2026-06-05 解除 FrameworkWorker 高频 review 卡点**：FrameworkWorker 已完成 Task 1 并提交 `5f12449`。Orchestrator 改派 Task 2 → Task 3 store lane，允许 Worker 每个 task 验证/提交后自动进入下一 task；只有失败、越界、需要 push/部署时才回报。
+
+**2026-06-05 验收 Writing Adapter Readiness**：WritingWorker 新增 `adapter-readiness.ts` 和 `writing-adapter-readiness.test.ts`，将 Writing JSON run/feedback/rule package 投影为 workflow run、rule package draft、dataset draft item，并产出 FrameworkWorker needs。Orchestrator 复验 targeted tests/typecheck 通过；当前全量 `pnpm test` 失败来自 FrameworkWorker Task2 migration 红测，不归 Writing readiness。
+
+**2026-06-05 验收 Store Lane Task 2/3 并派发 Task 4/5**：FrameworkWorker 提交 `379c20b feat(framework): add postgres schema migrations` 与 `307020b feat(framework): persist workflow runs in postgres`。Orchestrator 复验 `framework-store.test.ts` 6 passed、`pnpm test` 7 files / 18 tests passed、`pnpm typecheck`、`git diff --check`、业务命名扫描无命中。已派发 Task 4 → Task 5 连续 lane。
+
+**2026-06-05 验收 Artifact/Runtime Lane Task 4/5 并派发 Task 7A**：FrameworkWorker 提交 `a73a8db feat(framework): add artifact store abstraction` 与 `412c890 feat(framework): add postgres-backed worker runtime`。Orchestrator 复验 worker+store 11 passed、`pnpm test` 8 files / 23 tests passed、`pnpm typecheck`、`git diff --check`、根目录业务命名扫描无命中。已派发 Task 7A generic dataset repository，明确不碰 Writing adapter/API route。
+
+**2026-06-05 验收 Task 7A 并派发 Task 7B**：FrameworkWorker 提交 `55cd28e feat(framework): persist dataset drafts`。Orchestrator 复验 dataset+store 9 passed、`pnpm test` 9 files / 25 tests passed、`pnpm typecheck`、`git diff --check`、根目录业务命名扫描无命中。已派发 WritingWorker Task 7B：Writing dataset draft -> `FrameworkDatasetItem`，明确不改 root `packages/**`。
+
+**2026-06-05 验收 Task 7B**：WritingWorker 提交 `24d323f feat(writing): adapt dataset drafts to framework items`。新增 `writingDatasetDraftItemToFrameworkDatasetItem`，并用 fake SQL client 验证可 append 到 `createPostgresDatasetRepository`。Orchestrator 复验 targeted 2 files / 4 tests、`pnpm test` 9 files / 26 tests、`pnpm typecheck`、`git diff --check` 全通过；commit 未包含 root `packages/**`。
+
+**2026-06-05 验收 Task 7C**：WritingWorker 提交 `2368e0e feat(writing): persist dataset drafts through api flow`。新增 `persistWritingDatasetDraftsForRun()`、`/api/writing-runs/[runId]/dataset-drafts` POST route 和 repository provider 注入；未配置 repository 时返回明确 503。Orchestrator 复验 targeted 3 files / 7 tests、`pnpm test` 10 files / 29 tests、`pnpm typecheck`、`git diff --check` 全通过；commit 未包含 root `packages/**`。
+
+**2026-06-05 部署 framework topology / Writing dataset flow**：push CodeUp `main` 到 `c883049` 触发 `pipelineRunId=10`，镜像构建失败；根因是 Dockerfile builder 只复制 `doc-maker/**`，未复制 root `packages/**`，导致容器内测试找不到 `/app/packages/**`。已用 TDD 增加 Dockerfile topology 断言并提交 `521f3c2 fix(deploy): include framework packages in docker build`；本地 `docker build -t source2video:deploy-verify .` 通过，CodeUp `main` 触发 `pipelineRunId=11` 成功。线上验收：`/api/health` 200、`/writing` 200、`POST /api/writing-runs/missing-run/dataset-drafts` 返回预期 `503 repository_unconfigured`。
+
+**2026-06-05 线上复验**：云效 `pipelineRunId=11` 仍为 `SUCCESS`，CodeUp `main` 为 `521f3c2`。公网复验：`/api/health` 200，`/` 307 -> `/writing`，`/writing` 200。真实业务闭环 run `run_7c60ffa4` 已跑通：`candidate_ready` 3 candidates，最终 `finalized`，feedback 1，rule patch 1，published rule package `rule_package_2461058a`（10 rules），LLM traces 10，framework runs 11，Langfuse trace `ef369696-62d7-481c-a17c-4ee0fd3d238e`。`/framework` trace deep link 浏览器验证显示“Trace 已定位”。dataset route 当前按设计返回 `503 repository_unconfigured`。
 
 上一 session：**2026-06-05 持久 Agent team 初始化**：将项目从单 Orchestrator/Engineer 运行方式升级为持久 Agent team；新版规则下仅保留有独立 cwd 的 FrameworkWorker / WritingWorker；Infra / QA 改为临时 SubAgent 范围；明确 framework 归属仓库根 `packages/`，Writing 仅作为第一个业务 adapter。
 

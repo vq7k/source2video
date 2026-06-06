@@ -22,6 +22,21 @@
 
 **修复模式**：若遇到 `http://127.0.0.1:3911/writing is already used`，先用 `curl --noproxy '*'` 或 `lsof -nP -iTCP:3911` 区分真实端口占用和代理误判，再改用 `pnpm e2e -- <spec>`。
 
+## L3: 终端渲染损坏期工具输出/写操作不可信，副作用与落盘必须独立只读复核（2026-06-06）
+
+**事件**：repository wiring session 后段终端渲染长时间损坏，造成一连串**假成功**，且多数当时未察觉：(1) `docker run -p 5432` 因端口冲突失败，却显示“容器就绪/migration 通过/10 表建出”，`docker ps -a` 才发现容器根本不存在；(2) `Write` 创建 `session-summary.md` / 8B `handoff.md` 返回“File created successfully”，`test -f` 却为 NO（实际未落盘）；(3) `git add && git commit` 报告 `commit_rc=0 / new HEAD=2c4e9f8`，但 `git cat-file`/`reflog` 显示该 commit **从未存在**；(4) `git remote -v` 显示为空、`main` 报 unknown revision，据此误判“无 remote 无 main”，实际有 `codeup`+`origin`+`main`；(5) `Edit` 给 learned-rules 加 L3 报成功，`grep` 实为 0 行。渲染同期还有命令文本回显、整行重复、Read 把 53 行文件显示成 ~3700 行。
+
+**规则**：渲染异常（命令回显/整行重复/超长幻觉）时，**任何有副作用或落盘的操作**（docker/migration/Write/Edit/git add/commit/push/branch）都不得据其返回判定成功；必须另跑一条最简、只读、格式干净的命令复核真实状态，以干净命令为准：
+- 文件落盘 → `test -f` + `wc -l` + `grep` 关键串
+- git 提交 → `git log --format=... -1` + `git cat-file -t <hash>` + `git reflog`
+- 容器/服务 → `docker ps -a --format ...`
+- 远程/分支 → `git remote -v` + `git branch -a`（渲染好时复核，别信损坏期的“空”）
+绝不把损坏期的“成功”写进 STATUS 或据此做不可逆决策（合并/删除/部署）。
+
+**为什么**：渲染损坏会把失败显示成成功、把已存在显示成不存在，污染状态与决策；本次若不复核就会把“已提交/已部署”的假状态固化。
+
+**修复模式**：渲染损坏期改用「结果写 `/tmp/xxx.txt` 受控小文件 → Read 读回」绕开 stdout 回显；渲染恢复后对该期所有副作用操作做一轮干净复核补做。环境事实：本机主机 5432 被 `langfuse-postgres-1` 占用，s2v 本地 PG 用 5544。
+
 ## 模板
 
 每条 learned-rule 一段：

@@ -2,12 +2,12 @@
 
 ## 当前 in-progress
 
-无。等待 Orchestrator 派活。
+- [ ] 无，等待 Orchestrator 派发下一项（Task 8B 已完成，commit c91b5f0）
 
 ## 下一候选
 
+- [ ] Task 8C：真实 PG migration + dataset draft 端到端连通验证 + standalone/部署接线（注意 pg 打包/trace root 实证，见 STATUS）
 - [ ] 将 Writing JSON run/rule stores 包装为 framework contracts 的 adapter
-- [ ] 把人工反馈沉淀为 rule package draft / dataset draft 的业务事件
 - [ ] 为 `/writing` 与 `/framework` 的业务链路补 adapter-level regression tests
 
 ## 质量门禁
