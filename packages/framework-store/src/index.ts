@@ -9,6 +9,7 @@ import type { NodeRunRecord } from "@source2video/workflow-core/node";
 import type { WorkflowRunRecord, WorkflowRunStatus } from "@source2video/workflow-core/run";
 
 export type { FrameworkSqlClient, FrameworkSqlResult } from "./db";
+export { createPgSqlClient, type PgSqlClient, type PgSqlClientInput } from "./pg-client";
 export {
   frameworkMigrations,
   runFrameworkStoreMigrations,
