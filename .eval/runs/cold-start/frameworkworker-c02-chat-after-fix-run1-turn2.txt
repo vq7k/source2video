@@ -1,0 +1,12 @@
+当前状态：
+
+| 项 | 状态 |
+|---|---|
+| 角色 | FrameworkWorker，cwd=`packages/` |
+| 分支 | `codex/framework-topology` |
+| STATUS | 写着 Task 0 已完成，等待 Orchestrator review / 派 Task 1 |
+| TODO | 等 review；候选 Task 1 = generic persistence contracts |
+| 阻塞 | 无代码阻塞 |
+| 风险 | `git status` 不是 clean，且最近 5 个 commit 没看到 `chore(framework): split root package topology` |
+
+结论：状态文件和 Git 事实不一致。我建议先核对 Task 0 是否漏 commit / 漏 stage，再让 Orchestrator review；理由是 Task 1 依赖拓扑冻结。

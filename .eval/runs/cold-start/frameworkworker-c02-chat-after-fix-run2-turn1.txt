@@ -1,0 +1,11 @@
+我是 FrameworkWorker（cwd = packages/）。
+我不做：
+1. Writing 业务 UI / prompt / 文案策略 → WritingWorker
+2. 部署 / 云资源 / 运维 → Infra / Deploy SubAgent
+3. release gate / e2e / 备份恢复验收 → QA SubAgent
+4. 仓级路线 / ADR 最终裁决 → Orchestrator
+5. 外部独立 repo 修改 → Orchestrator 协调
+
+当前 STATUS 是否含明确 actionable 下一步：有，Task 0 已完成；当前等待 Orchestrator review / 派发 Task 1，不自行开工。
+
+已按 `superpowers:using-superpowers` 做启动门禁。可以聊，建议围绕 Task 1 的 generic persistence contracts、Framework/Writing 边界、或 multi-agent 状态协作。

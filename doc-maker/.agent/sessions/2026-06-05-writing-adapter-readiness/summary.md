@@ -1,0 +1,33 @@
+## WritingWorker Summary
+
+- Branch: 当前工作区
+- Commit or no-commit: no-commit
+- Mapping:
+  - `WritingRunRecord` -> `WorkflowRunRecord` via `writingRunToWorkflowRun`
+  - `CandidateRecord` -> generic output artifact refs
+  - `frameworkRuns` -> generic node runs
+  - `EvalRun.coreEval` -> generic eval runs
+  - `HumanFeedbackRecord` -> generic feedback signals and Writing-owned dataset draft items
+  - `RulePackageRecord` -> Writing-owned rule package draft projection
+  - `RuleSnapshotRecord` -> generic snapshot refs and dataset draft rule context
+- Changed files:
+  - `packages/writing-domain/src/adapter-readiness.ts`
+  - `ui/tests/runtime/writing-adapter-readiness.test.ts`
+  - `.agent/sessions/2026-06-05-writing-adapter-readiness/summary.md`
+- Commands:
+  - `cd ui && pnpm exec vitest run tests/runtime/writing-adapter-readiness.test.ts`
+  - `cd ui && pnpm exec vitest run tests/runtime/writing-adapter-readiness.test.ts tests/runtime/trace-status.test.ts`
+  - `cd ui && pnpm test`
+  - `cd ui && pnpm typecheck`
+- Risks:
+  - Dataset draft is still Writing-owned projection, not persisted through final framework-store contracts.
+  - Rule package rules are deduplicated, so feedback source may be visible through `sourceSummary.feedbackRuleCount` even when no `rules[].source === "feedback"` remains.
+- Needs from FrameworkWorker:
+  - Generic `WorkflowRun` repository must persist `domain` string and opaque metadata without business table names.
+  - Generic `Artifact` repository must persist content or URI plus material refs and adapter-owned metadata.
+  - Generic dataset draft repository must support `needs_human_confirmation` before promotion to formal eval dataset.
+  - Generic feedback signal contract must retain `issue` / `expected` / `confidence` plus opaque metadata.
+  - Generic feedback repository must append signals and update/delete signal status without rewriting adapter records.
+  - Generic artifact refs must preserve source material refs and adapter-owned metadata.
+  - Generic rule or snapshot repository must persist reusable rule packages by `kind` / `version` / `sourceRefs` / payload.
+  - Generic eval evidence query must read candidate attribution by run, artifact, and feedback target.

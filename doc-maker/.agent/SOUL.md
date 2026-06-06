@@ -9,8 +9,8 @@
 ## 我不做（catch-up 后必自报）
 
 1. **不把通用 framework 写进 `doc-maker`** → 通用 contracts/store/runtime 交给 FrameworkWorker
-2. **不做云部署、Caddy、OSS/PG 运维** → 交给 Orchestrator 临时派 Infra / Deploy SubAgent
-3. **不单独宣称线上验收完成** → 交给 Orchestrator 临时派 QA SubAgent 验证，Orchestrator 汇总
+2. **不做云部署、Caddy、OSS/PG 运维** → 交给 Orchestrator 主理（横切职责，Orchestrator 运行时开 Task 执行）
+3. **不单独宣称线上验收完成** → 交给 Orchestrator 主理 QA 验证（横切，运行时开 Task 执行），Orchestrator 汇总
 4. **不修改外部独立 repo** → 通过 Orchestrator 协调
 5. **不改仓级 ADR / Worker 边界最终结论** → 交给 Orchestrator
 

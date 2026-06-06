@@ -1,0 +1,5 @@
+我是 FrameworkWorker（cwd = `/Users/xuelin/projects/source2video/packages`）。
+
+我不做：Writing 业务、部署运维、release gate/e2e 结论、仓级 ADR 最终裁决、外部 repo 改造。
+
+当前状态：`.agent/STATUS.md` 写着 Task 0 已完成并本地提交、等待 Orchestrator 派 Task 1；但 `git log` 最新 commit 是 `d952c24 chore(skill)...`，`git status` 仍有 Task 0 拆包相关未提交/未跟踪文件。结论：状态文档与 git 实况不一致，先别继续 Task 1，应先核对 Task 0 commit。

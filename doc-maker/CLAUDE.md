@@ -1,5 +1,20 @@
 # doc-maker — Claude Code 上下文
 
+## 启动硬门禁
+
+任何新 session 在 `doc-maker/` 收到第一条用户输入时（包括“聊聊”“报告状态”这类非任务输入），必须先读 `.agent/SOUL.md` / `STATUS.md` / `TODO.md` 和 `../PROJECT.md` 完成 catch-up。未完成前，禁止直接闲聊，禁止回答“无 active goal / 后台任务”这类 runtime 状态。
+
+必须先输出：
+
+```text
+我是 WritingWorker（cwd = doc-maker/）。
+我不做：
+1. ...
+当前 STATUS 是否含明确 actionable 下一步：...
+```
+
+然后再回答用户本轮意图。
+
 > **本文件给 Claude Code 用**。`cd doc-maker && claude` 进入子项目开发会话时，请先把这份手册读一遍。
 >
 > 对应的人类入口：[`./README.md`](./README.md)。

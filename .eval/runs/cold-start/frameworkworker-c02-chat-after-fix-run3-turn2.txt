@@ -1,0 +1,9 @@
+当前状态有冲突：
+
+- 角色：FrameworkWorker，cwd=`packages/`
+- 分支：`codex/framework-topology`
+- STATUS/TODO 写的是：Task 0 已完成并本地提交，等待 Orchestrator review / 派 Task 1
+- 但 git 显示：工作区仍 dirty，最近提交是 `chore(skill): sync init-agent-teams v0.5.1`，不是 `chore(framework): split root package topology`
+- 当前未提交内容：37 个 tracked 文件变更 + root `packages/*` 新 package 文件
+
+结论：**状态文件说 Task 0 已提交，但代码现场看 Task 0 还没干净落 commit**。下一步应先对齐 Task 0 提交状态，再等 Orchestrator 派 Task 1。

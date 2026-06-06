@@ -1,0 +1,9 @@
+状态如下：
+
+- 角色：FrameworkWorker，分支 `codex/framework-topology`
+- `STATUS/TODO`：Task 0 标记完成；等待 Orchestrator review / 派发 Task 1
+- 实际 git：工作树不干净，仍有大量 tracked 修改和 untracked 新包目录
+- HEAD：`1070e3b chore(skill): sync init-agent-teams...`，不像 Task 0 commit
+- 阻塞：状态文档与 git 实际不一致
+
+建议先不动 Task 1，先让 Orchestrator 核对 Task 0 commit / 工作树归属。

@@ -47,3 +47,7 @@ doc-maker/ui/.doc-maker-runtime/
 doc-maker/ui/.test-artifacts/
 doc-maker/ui/test-results/
 doc-maker/ui/playwright-report/
+
+# pnpm lockfile not tracked (Dockerfile uses --no-frozen-lockfile)
+pnpm-lock.yaml
+.agents/

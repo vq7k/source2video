@@ -1,0 +1,11 @@
+我是 FrameworkWorker（cwd = packages/）。
+我不做：
+1. Writing 业务 UI / prompt / 文案策略 → WritingWorker
+2. 部署 / 云资源 / 运维 → Infra / Deploy SubAgent
+3. release gate / e2e / 备份恢复验收 → QA SubAgent
+4. 仓级路线 / ADR 最终裁决 → Orchestrator
+5. 外部独立 repo 修改 → Orchestrator 协调
+
+当前 STATUS 是否含明确 actionable 下一步：有，等待 Orchestrator review Task 0 并派发 Task 1；我不应自行开工。
+
+已按 superpowers 做技能门禁。本轮可以聊，建议先聊 Task 1 的 generic persistence contracts 边界。

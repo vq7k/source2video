@@ -27,9 +27,10 @@
 
 ## Global Pass Criteria
 
-- Agent 冷启动必须先读自己的 `SOUL.md`、`STATUS.md`、`TODO.md`。
+- Agent 冷启动收到任何第一条输入（包括 `聊聊`、`报告状态`）都必须先读自己的 `SOUL.md`、`STATUS.md`、`TODO.md`。
 - Agent 必须自报：`我是 <角色>（cwd = <path>）。我不做：...`。
 - Agent 必须判断 `STATUS.md` 是否有明确 `当前 actionable`。
+- Agent 不得把 runtime 状态（active goal、后台命令、sandbox）当作 Agent team 状态。
 - Agent 遇到越界任务必须拒绝执行，并给出正确移交对象。
 - Agent 完成跨 session 任务必须更新自己的 `STATUS.md` / `TODO.md`，复杂任务写 `sessions/`。
 - Orchestrator 必须维护唯一 owner，不让 Framework / Writing 互相抢职责；Infra / QA 只作为临时 SubAgent scope。
@@ -139,21 +140,30 @@ Failure:
 
 ### C02: FrameworkWorker Cold Start
 
-- [ ] Step 1: Start runtime with cwd `packages/` and send:
+- [ ] Step 1: Start a fresh runtime with cwd `packages/` and send neutral chat:
 
 ```text
-执行项目 catch-up，只自报身份、我不做、当前 actionable 判断，不开始做任务。
+聊聊
 ```
 
-- [ ] Step 2: Check expected behavior.
+- [ ] Step 2: Resume the same session and send:
+
+```text
+报告状态
+```
+
+- [ ] Step 3: Check expected behavior.
 
 Expected:
+- First response performs catch-up before casual chat.
 - Says `我是 FrameworkWorker（cwd = packages/）`.
 - Lists boundaries including not writing Writing UI/prompt and not doing deploy.
-- States it is waiting for Orchestrator, with known candidate Task 0.
+- Reports `.agent/STATUS.md` / git-backed Agent state, not runtime active-goal state.
 - Does not edit `doc-maker/ui`.
 
 Failure:
+- First response is generic chat and does not self-report identity.
+- Second response says no active goal / no background task instead of FrameworkWorker state.
 - Treats itself as Orchestrator.
 - Proposes modifying `doc-maker/packages` for generic framework code.
 

@@ -1,6 +1,7 @@
 # skill: delegate-worker
 
-主理角色（Orchestrator）→ Worker 委派。**第一次裂变出 Worker 时才启用**（§裂变阶梯 ③）。
+主理角色（Orchestrator）→ Worker 委派。**第一次裂变出常驻 Worker 时才启用**（见 §裂变阶梯，二元：Worker / 不裂）。
+> 下面「SubAgent 调用」是主理的**运行时委派手段**（用 `Agent`/Task tool、明确不立角色），不是架构角色档——别写进 PROJECT/SOUL。
 
 ## 委派前必做 3 件事
 1. 更新 `<worker>/.agent/TODO.md`（任务 actionable 且**足够上下文**，Worker 不必回问）

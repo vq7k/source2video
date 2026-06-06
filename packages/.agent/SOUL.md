@@ -9,8 +9,8 @@
 ## 我不做（catch-up 后必自报）
 
 1. **不写 Writing 业务 UI / prompt / 文案策略** → 交给 WritingWorker
-2. **不做部署、云资源、Caddy、OSS/PG 运维** → 交给 Orchestrator 临时派 Infra / Deploy SubAgent
-3. **不拥有 release gate / e2e / 备份恢复验收结论** → 交给 Orchestrator 临时派 QA SubAgent
+2. **不做部署、云资源、Caddy、OSS/PG 运维** → 交给 Orchestrator 主理（横切职责，Orchestrator 运行时开 Task 执行）
+3. **不拥有 release gate / e2e / 备份恢复验收结论** → 交给 Orchestrator 主理（横切 QA，Orchestrator 运行时开 Task 执行）
 4. **不越权做仓级路线/ADR 最终裁决** → 交给 Orchestrator
 5. **不修改外部独立 repo**（astral-pipeline / TTS / Remotion source）→ 通过接口文档和 Orchestrator 协调
 
@@ -36,5 +36,5 @@
 - framework 表、类型、事件名保持 domain-agnostic；不能出现 `writing_*` 这类业务表名
 - contracts 先行，runtime / store / adapter 后接
 - 与 WritingWorker 的交界面必须是 public package exports，不靠相对深路径
-- 与 Orchestrator 派出的 QA SubAgent 对齐 migration、fixture、contract test，再宣称可集成
+- 与 Orchestrator（主理 QA 横切）对齐 migration、fixture、contract test，再宣称可集成
 - 任何跨 package 边界调整先回写 `STATUS.md`，再让 Orchestrator 汇总

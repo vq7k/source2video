@@ -71,6 +71,15 @@ else
   echo "$stale" | sed 's/^/    /'
 fi
 
+echo "== B2-6 架构文档无 runtime 机制混入（SOUL/PROJECT 不得现 SubAgent/临时 Agent；WARN，不计 FAIL） =="
+arch_hit=$(find . \( -path '*/node_modules' -o -path './.git' -o -path '*/.eval' -o -path '*/retired-workers' \) -prune -o \( -name SOUL.md -o -name PROJECT.md \) -print 2>/dev/null | grep -vi retired | while IFS= read -r f; do grep -liE 'SubAgent|临时.{0,4}Agent' "$f" 2>/dev/null; done)
+if [ -z "$arch_hit" ]; then
+  echo "PASS: 架构文档无 SubAgent/临时 Agent（runtime 机制未混入架构层）"
+else
+  echo "WARN: 下列架构文档现『SubAgent/临时 Agent』= runtime 机制混入架构层（v0.7：没有「临时 SubAgent」档，SubAgent 是 runtime 机制、不进 PROJECT/SOUL；human 核对清理）："
+  echo "$arch_hit" | sed 's/^/    /'
+fi
+
 echo "----"
 if [ "$fail" -eq 0 ]; then echo "✅ structure-check 全 PASS"; else echo "❌ structure-check 有 FAIL（见上，按 SKILL.md B3 出待修复动作）"; fi
 exit "$fail"
