@@ -16,6 +16,8 @@
     "plugins": [{ "name": "next" }],
     "baseUrl": ".",
     "paths": {
+      "@source2video/framework-store": ["../../packages/framework-store/src/index"],
+      "@source2video/framework-store/*": ["../../packages/framework-store/src/*"],
       "@source2video/workflow-core/*": ["../../packages/workflow-core/src/*"],
       "@source2video/observability/*": ["../../packages/observability/src/*"],
       "@doc-maker/writing-domain/*": ["../packages/writing-domain/src/*"],
