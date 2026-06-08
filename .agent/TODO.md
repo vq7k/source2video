@@ -2,13 +2,17 @@
 
 ## 当前 in-progress
 
-- [ ] **部署 follow-up 提交 + push**：Dockerfile 已修复 pipeline run `13` 的 `pg` 缺失；重新验证、提交并 push CodeUp 触发 pipeline run `14`。
-- [ ] **生产 data plane 启用（上线前置）**：服务器 `/opt/source2video/.env` 配 `FRAMEWORK_DATABASE_URL`，对生产 PG 跑 `packages/framework-store/migrations/0001_framework_core.sql`，再部署/验 `/api/writing-runs/[runId]/dataset-drafts` 与 `/confirm` route。
+- [ ] **生产运维硬化**：当前线上使用 compose 内置 `source2video-postgres`；给 `/opt/source2video/.env` 设置强 `SOURCE2VIDEO_POSTGRES_PASSWORD` 后重部署一次。
 
 ## 已收口（本 session）
 
 - [x] OpenSpec 13.4：Feedback Ledger -> `writing_dataset_draft`；人工确认 -> `writing_eval_dataset`，draft 不被静默改写
 - [x] OpenSpec 13.5：当前不做 Source Store / RAG / workflow builder，继续 Reference Paste + 既有 trace/eval 闭环
+- [x] 线上数据飞轮闭环：run `run_2f8ec678` 完成 confirm / feedback / rule patch / finalize / rule package publish / dataset draft / eval confirm
+- [x] OpenSpec 归档：`add-writing-production-system` -> `openspec/changes/archive/2026-06-08-add-writing-production-system/`，主 specs 已生成
+- [x] CodeUp run `17` 部署成功：内置 `source2video-postgres` started/healthy，dataset route 从旧 503 变为可落库
+- [x] 云效 pipeline config 同步：修复 run `16` 使用旧 deploy script、未展开内层 `deploy.tgz` 的问题
+- [x] Docker/route follow-up：`98f08a8`、`709d501` 已 push `origin/main` + `codeup/main`
 - [x] Task 8B：Writing provider 接 `FRAMEWORK_DATABASE_URL` -> `createPgSqlClient` -> `createPostgresDatasetRepository`（commit `c91b5f0`）
 - [x] Task 8C：一次性 Docker Postgres `5544` migration + env-gated integration test 真实落库通过；容器已清理
 - [x] 部署 run `13` 失败已定位：Docker build 缺 `packages/framework-store` dependencies；本地 Docker build 已验证修复
@@ -26,7 +30,7 @@
 ## 候选里程碑（待 user 拍板优先级）
 
 - [x] 数据飞轮第一闭环（本地）：人工反馈 → rule package / dataset draft → human-confirmed eval dataset → Postgres dataset item
-- [ ] 数据飞轮上线：生产 PG env + migration + 线上 dataset route 验收
+- [x] 数据飞轮上线：生产 compose 内置 PG + lazy migration + 线上 dataset route / confirm route 验收
 - [ ] framework data plane 本地闭环：root `packages/` contracts → Postgres SOT → worker queue → artifact store → dataset/eval/gate
 - [ ] doc-maker writing production 下一阶段范围决断：Topic/Round、规则包、评审闭环、业务 UI 打磨或稳定性增强
 - [ ] video-maker 启动设计（如推进：视觉决策 + Remotion 渲染编排）
@@ -45,7 +49,7 @@
 
 ## 线上运维候选（按需）
 
-- [ ] 给 `source2video` 生产容器配置 `FRAMEWORK_DATABASE_URL` 并执行 framework-store migration
+- [ ] 给 `source2video` 生产 compose 设置强 `SOURCE2VIDEO_POSTGRES_PASSWORD` 并重部署
 - [ ] 将 `s2v.x-lin7.com` Caddy site block 从生产手工配置同步回网关项目的长期 SOT，避免未来重建 `ftai-caddy` 丢失配置
 - [ ] 如继续用 Langfuse 页面验收，安装/启用 Codex Chrome Extension 后可复用 Chrome 登录态验证 trace 页面权限
 - [ ] 如需要回滚，重跑云效历史流水线；镜像 tag 使用 `${CI_COMMIT_ID}`，不是裸 `latest`

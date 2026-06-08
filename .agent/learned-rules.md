@@ -37,6 +37,16 @@
 
 **修复模式**：渲染损坏期改用「结果写 `/tmp/xxx.txt` 受控小文件 → Read 读回」绕开 stdout 回显；渲染恢复后对该期所有副作用操作做一轮干净复核补做。环境事实：本机主机 5432 被 `langfuse-postgres-1` 占用，s2v 本地 PG 用 5544。
 
+## L4: 云效流水线页面配置不是 repo `flow.yml` 的自动镜像，部署脚本变更后必须查实际 pipeline config（2026-06-08）
+
+**事件**：提交 `709d501 feat(deploy): add postgres data plane` 后，CodeUp pipeline run `16` 显示构建/部署均成功，但线上 dataset route 仍返回 503。VMDeploy 日志证明实际部署脚本没有展开内层 `deploy.tgz`，服务器保留旧 `docker-compose.yml`，没有创建 `source2video-postgres`。根因是云效 pipeline 配置仍停在旧脚本，repo 内 `flow.yml` 不是自动生效的 SOT。
+
+**规则**：以后修改 `flow.yml` / 部署命令 / artifact 解包方式后，不能只看 commit 和 pipeline success；必须用 `aliyun devops GetPipeline` 或 VMDeploy 日志确认云端实际 `execute_cmd` 已同步，必要时显式 `UpdatePipeline`。
+
+**为什么**：云端流水线配置和 repo 文件会漂移；pipeline success 只能证明旧脚本跑完，不能证明新部署拓扑上线。
+
+**修复模式**：部署配置变更后的验收顺序：`GetPipeline` 查实际 YAML/`execute_cmd` -> 必要时 `UpdatePipeline` -> `StartPipelineRun` -> `LogVMDeployMachine` 查容器/compose 拓扑 -> 公网业务 API 闭环验证。
+
 ## 模板
 
 每条 learned-rule 一段：

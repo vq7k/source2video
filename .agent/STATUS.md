@@ -2,19 +2,19 @@
 
 ## 当前 actionable
 
-**Writing dataset / repository wiring 已完成本地全闭环**（2026-06-08）：8A Framework PG client、8B Writing env-driven provider、8C 一次性 Docker Postgres migration + draft/eval dataset 落库验证均已通过。OpenSpec `add-writing-production-system` 剩余 13.4/13.5 已收口：Feedback Ledger 先进入 `writing_dataset_draft`，人工确认后复制进入正式 `writing_eval_dataset`，仍不做 Source Store / RAG / workflow builder。
+**Writing Production 数据飞轮已完成线上全闭环**（2026-06-08）：OpenSpec `add-writing-production-system` 67/67 complete；CodeUp `main` 部署到 `709d501 feat(deploy): add postgres data plane`；云效 pipeline run `17` `SUCCESS`；生产 Docker Compose 已启动内置 `source2video-postgres` 并挂载 `data/postgres`。
 
-本次新增/变更：
-- `promoteWritingDatasetDraftsForRun()`：要求显式 `confirmedBy`，把 draft item 复制为 `split="validation"` 的 human-confirmed eval item，不静默改写 draft dataset。
-- `POST /api/writing-runs/[runId]/dataset-drafts/confirm`：人工确认入口，未配 repository 仍返回 `503 repository_unconfigured`。
-- `writing-dataset-postgres.integration.test.ts`：默认 skip；设置 `RUN_POSTGRES_INTEGRATION=1` + `FRAMEWORK_DATABASE_URL` 后跑真实 Postgres。
-- 8C 真实验证：`postgres:16-alpine` on `localhost:5544`；migration 建出 10 张 `framework_*` 表；integration test 1/1 passed；直接查库 `writing_dataset_draft=1`、`writing_eval_dataset=1`；容器已清理。
+线上验收事实：
+- `GET https://s2v.x-lin7.com/api/health` → 200；`HEAD /writing` → 200。
+- `POST /api/writing-runs/missing-run/dataset-drafts` → 404 `Writing run not found`，说明 repository 已配置，不再是旧的 503。
+- 真实线上 run `run_2f8ec678`：confirm → feedback → rule patch → finalize → rule package publish 全部 200；published package `rule_package_dd760243`。
+- dataset draft：`writing_dataset_draft` itemCount=1；human confirm 后 eval dataset：`writing_eval_dataset` itemCount=1，split=`validation`。
 
-下一步 actionable：提交 Dockerfile follow-up 并重新 push CodeUp 触发部署。pipeline run `13` 已失败，根因是 Docker build 没安装 `packages/framework-store` 的 `pg` / `@types/pg`；已用 topology test + 本地 `docker build -t source2video:deploy-verify .` 验证修复。线上若要启用生产落库，需要在服务器 `/opt/source2video/.env` 配 `FRAMEWORK_DATABASE_URL` 并对生产 PG 执行 migration。未配置前，线上 dataset route 保持 503 是预期。
+下一步 actionable：如继续做上线硬化，给生产 `/opt/source2video/.env` 设置强 `SOURCE2VIDEO_POSTGRES_PASSWORD` 后重部署一次；如继续做产品，另起下一阶段 OpenSpec。当前业务闭环无阻塞。
 
 ## 当前阶段
 
-**持久 Agent team 运行中；Writing Production v1 已上线；OpenSpec `add-writing-production-system` 已完成；framework data plane 的 Writing dataset 本地闭环已在真实 PG 验证打通**（2026-06-08）。
+**持久 Agent team 运行中；Writing Production v1 已上线；OpenSpec `add-writing-production-system` 已完成并归档；framework data plane 的 Writing dataset 已在线上真实闭环验证打通**（2026-06-08）。
 
 Agent team：
 
@@ -32,14 +32,16 @@ Agent team：
 - 公网入口：`https://s2v.x-lin7.com`
 - 默认入口：`/` 重定向/进入 `/writing`
 - 部署：CodeUp `main` 自动触发云效流水线 `5006844`
-- 最近部署提交：`521f3c2 fix(deploy): include framework packages in docker build`；镜像 tag `521f3c25`
-- 最近部署流水线：`pipelineRunId=11` `SUCCESS`；镜像构建 `SUCCESS`；部署 `SUCCESS`
-- 线上验收：`/api/health` ok；`/writing` ok；`run_787ab96e` 到 `candidate_ready`，3 candidates，8 traces 全 `complete`；Langfuse trace `4b973abf-d46c-4539-ac6e-f79b50434fb5`，ScoreSink `complete`。
+- 最近部署提交：`709d501 feat(deploy): add postgres data plane`；镜像 tag `709d501c`
+- 最近部署流水线：`pipelineRunId=17` `SUCCESS`；镜像构建 `SUCCESS`；部署 `SUCCESS`；deployOrderId `63525694`
+- 线上验收：`/api/health` ok；`/writing` ok；`run_2f8ec678` 最终 `finalized`，feedback 1，rule patch 1，published rule package `rule_package_dd760243`，dataset draft/eval confirm 均 200。
 - 生产网关修复：`ftai-caddy` 原 Caddyfile 缺少 `s2v.x-lin7.com` HTTPS site block；已在服务器 `/opt/from-fullstack-to-ai/infra/Caddyfile` 追加并 reload，备份为 `Caddyfile.bak.s2v-20260605-085109`。
 - 本次本地收口新增：`/writing` 反馈再来一轮 + Rule Package 草稿/发布；`/framework?traceId=` Trace 已定位 + ScoreSink 状态。
 - 本地验证：`pnpm test` 4 files / 7 tests passed；`pnpm e2e` 6 passed；`pnpm build` passed。
 
 ## 最近一次 session
+
+**2026-06-08 线上完成 Writing dataset / data plane 全闭环**：先提交 `98f08a8` 修复 Docker runtime assets 与 missing-run 404，再提交 `709d501` 增加内置 `source2video-postgres` data plane、生产 lazy migration、pipeline/compose 同步。run `15` 修复线上 500→503；run `16` 成功但云端流水线配置仍旧，未展开内层 `deploy.tgz`，导致仍未部署新 compose；已用 `UpdatePipeline` 同步云效 pipeline config。run `17` 成功部署新 compose，VMDeploy 日志确认 `source2video-postgres` started/healthy。线上 API 闭环 run `run_2f8ec678`：confirm、feedback、rule patch、finalize、rule package publish、`writing_dataset_draft`、`writing_eval_dataset` confirm 全部通过。随后执行 `openspec archive -y add-writing-production-system`，主规格生成 4 个 capability spec，change 归档到 `openspec/changes/archive/2026-06-08-add-writing-production-system/`。
 
 **2026-06-08 完成 Writing dataset closure / 8C 本地闭环**：按 OpenSpec `add-writing-production-system` 剩余 13.4/13.5 推进。TDD 新增人工确认 promotion：`writing_dataset_draft` 仅保留 `needs_human_confirmation` 草稿，`promoteWritingDatasetDraftsForRun()` 要求 `confirmedBy` 后复制进入 `writing_eval_dataset`（`split=validation`、`reviewStatus=human_confirmed`）；新增 `/dataset-drafts/confirm` route。真实 8C 用 `postgres:16-alpine` on `localhost:5544` 应用 migration，10 张表复核通过；env-gated Postgres integration test 真实写入 draft/eval dataset 各 1 条；容器已清理。
 
