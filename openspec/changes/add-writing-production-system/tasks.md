@@ -92,8 +92,8 @@
 - [x] 13.1 实现 Rule Scope “应用规则 / 不应用规则” A/B 对照预览，同一 Job Spec 下对比规则影响。
 - [x] 13.2 引入 Rule Package 命名边界：区分 Writing Rule Scope、Rule Package、Published Skill Package。
 - [x] 13.3 在 Scope / Precheck 风险中展示来源覆盖率、未覆盖来源和过度仿写风险，高风险阻断发布。
-- [ ] 13.4 将历史 Job Feedback Ledger 沉淀为 dataset draft，人工确认后再进入正式 eval dataset。
-- [ ] 13.5 暂不做 Source Store / RAG / workflow builder；当前继续使用 Reference Paste 与既有 trace/eval 闭环。
+- [x] 13.4 将历史 Job Feedback Ledger 沉淀为 dataset draft，人工确认后再进入正式 eval dataset。
+- [x] 13.5 暂不做 Source Store / RAG / workflow builder；当前继续使用 Reference Paste 与既有 trace/eval 闭环。
 
 ## 14. 输出契约与规则来源边界修正
 

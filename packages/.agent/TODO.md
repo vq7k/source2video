@@ -6,8 +6,8 @@
 
 ## 下一候选
 
-- [ ] Task 7B: Writing adapter -> formal dataset repository
-- [ ] Task 8B (WritingWorker): wire `createPgSqlClient` 进 dataset draft API route（FrameworkWorker 已交付 adapter，等业务侧接线 + bundling 配置）
+- [x] Task 8B (WritingWorker): wire `createPgSqlClient` 进 dataset draft API route
+- [x] Task 8C (Orchestrator): real Postgres migration + Writing dataset draft/eval integration verification
 - [ ] Task 6/9: Writing job integration + release gate（等 runtime/job queue 可用后）
 
 ## 已裁决（Orchestrator）

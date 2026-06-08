@@ -170,6 +170,83 @@ describe("writing dataset draft persistence", () => {
     );
   });
 
+  it("requires human confirmation before promoting dataset drafts into the formal eval dataset", async () => {
+    const run = await createRunWithDatasetDraft();
+    const repository = new FakeDatasetRepository();
+    const persistenceModule = (await import("@doc-maker/writing-domain/dataset-draft-persistence")) as {
+      promoteWritingDatasetDraftsForRun: (
+        run: WritingRunRecord,
+        repository: FakeDatasetRepository,
+        options?: { confirmedBy?: string; at?: string },
+      ) => Promise<{ dataset: FrameworkDatasetRecord; items: FrameworkDatasetItem[] }>;
+    };
+
+    await expect(
+      persistenceModule.promoteWritingDatasetDraftsForRun(run, repository, {
+        confirmedBy: "",
+        at: "2026-06-05T00:00:00.000Z",
+      }),
+    ).rejects.toThrow("confirmedBy");
+
+    expect(repository.appended).toHaveLength(0);
+  });
+
+  it("promotes human-confirmed dataset drafts into the formal eval dataset without mutating the draft dataset", async () => {
+    const run = await createRunWithDatasetDraft();
+    const repository = new FakeDatasetRepository();
+    const persistenceModule = (await import("@doc-maker/writing-domain/dataset-draft-persistence")) as {
+      WRITING_DATASET_DRAFT_ID: string;
+      WRITING_EVAL_DATASET_ID: string;
+      persistWritingDatasetDraftsForRun: (
+        run: WritingRunRecord,
+        repository: FakeDatasetRepository,
+        options?: { at?: string },
+      ) => Promise<{ dataset: FrameworkDatasetRecord; items: FrameworkDatasetItem[] }>;
+      promoteWritingDatasetDraftsForRun: (
+        run: WritingRunRecord,
+        repository: FakeDatasetRepository,
+        options: { confirmedBy: string; at?: string; note?: string },
+      ) => Promise<{ dataset: FrameworkDatasetRecord; items: FrameworkDatasetItem[] }>;
+    };
+    const at = "2026-06-05T00:00:00.000Z";
+
+    const draftResult = await persistenceModule.persistWritingDatasetDraftsForRun(run, repository, { at });
+    const promotedResult = await persistenceModule.promoteWritingDatasetDraftsForRun(run, repository, {
+      confirmedBy: "human-reviewer",
+      at,
+      note: "accepted for eval replay",
+    });
+
+    expect(persistenceModule.WRITING_EVAL_DATASET_ID).toBe("writing_eval_dataset");
+    expect(draftResult.dataset.id).toBe(persistenceModule.WRITING_DATASET_DRAFT_ID);
+    expect(draftResult.items[0]?.split).toBe("draft");
+    expect(promotedResult.dataset).toEqual(
+      expect.objectContaining({
+        id: "writing_eval_dataset",
+        kind: "writing_eval_dataset",
+        version: "eval-v1",
+      }),
+    );
+    expect(promotedResult.items).toHaveLength(1);
+    expect(promotedResult.items[0]).toEqual(
+      expect.objectContaining({
+        id: `eval_dataset_item_${run.id}_${run.feedback[0].id}`,
+        datasetId: "writing_eval_dataset",
+        sourceRunId: run.id,
+        sourceArtifactId: run.candidates[0].id,
+        split: "validation",
+        metadata: expect.objectContaining({
+          domain: "writing",
+          reviewStatus: "human_confirmed",
+          sourceDraftItemId: `dataset_draft_${run.id}_${run.feedback[0].id}`,
+          confirmedBy: "human-reviewer",
+          confirmationNote: "accepted for eval replay",
+        }),
+      }),
+    );
+    expect(repository.datasets.get("writing_dataset_draft")?.items[0]?.split).toBe("draft");
+  });
+
   it("persists dataset drafts through the writing run API route when a repository is configured", async () => {
     const run = await createRunWithDatasetDraft();
     const repository = new FakeDatasetRepository();
@@ -236,5 +313,58 @@ describe("writing dataset draft persistence", () => {
       error: "Writing dataset repository is not configured",
       status: "repository_unconfigured",
     });
+  });
+
+  it("promotes dataset drafts through the confirmation API route when a repository is configured", async () => {
+    const run = await createRunWithDatasetDraft();
+    const repository = new FakeDatasetRepository();
+    const routeModule = (await import("../../app/api/writing-runs/[runId]/dataset-drafts/confirm/route")) as {
+      POST: (
+        request: Request,
+        context: { params: Promise<{ runId: string }> },
+      ) => Promise<Response>;
+    };
+
+    setWritingDatasetDraftRepositoryProviderForTests(() => repository);
+    try {
+      const response = await routeModule.POST(new Request("http://localhost/api/writing-runs/run-id/dataset-drafts/confirm", {
+        method: "POST",
+        body: JSON.stringify({ confirmedBy: "human-reviewer", note: "ready for eval replay" }),
+      }), {
+        params: Promise.resolve({ runId: run.id }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body).toEqual(
+        expect.objectContaining({
+          dataset: expect.objectContaining({
+            id: "writing_eval_dataset",
+            kind: "writing_eval_dataset",
+            version: "eval-v1",
+            itemCount: 1,
+          }),
+          items: [
+            expect.objectContaining({
+              id: `eval_dataset_item_${run.id}_${run.feedback[0].id}`,
+              datasetId: "writing_eval_dataset",
+              sourceRunId: run.id,
+              sourceArtifactId: run.candidates[0].id,
+              split: "validation",
+            }),
+          ],
+        }),
+      );
+      expect(repository.appended).toEqual([
+        expect.objectContaining({
+          datasetId: "writing_eval_dataset",
+          item: expect.objectContaining({
+            split: "validation",
+          }),
+        }),
+      ]);
+    } finally {
+      setWritingDatasetDraftRepositoryProviderForTests(null);
+    }
   });
 });

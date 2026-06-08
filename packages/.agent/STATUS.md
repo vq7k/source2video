@@ -2,13 +2,11 @@
 
 ## 当前 actionable
 
-**Task 8A Postgres SQL client adapter 已完成**：commit `970e289 feat(framework): add postgres sql client adapter`。已提交未 push。新增 `createPgSqlClient`（pg.Pool → FrameworkSqlClient）+ `pg` runtime dep + `@types/pg`/`vitest` dev dep，export 到 framework-store index。TDD 5 tests 全绿（fake pool，无真实 PG）。
+**Framework data plane repository wiring 已交棒完成**：Task 8A `createPgSqlClient`（commit `970e289`）已完成；Task 8B Writing provider（commit `c91b5f0`）已接线；Task 8C 由 Orchestrator 于 2026-06-08 用真实 Postgres 验证通过。当前 FrameworkWorker 无 in-progress。
 
-handoff：`./sessions/2026-06-06-task-8a-pg-sql-client/handoff.md`
+本地 8C 证据：`postgres:16-alpine` on `localhost:5544`，framework migration 建出 10 张表，env-gated integration test 写入 `writing_dataset_draft=1` 与 `writing_eval_dataset=1`。生产启用仍需 Orchestrator 配生产 `FRAMEWORK_DATABASE_URL` 并执行 migration。
 
 **lockfile 决策（Orchestrator 已裁决 2026-06-06）：不纳管**。仓库从未 track `pnpm-lock.yaml`，且 `Dockerfile` 用 `pnpm install --no-frozen-lockfile` —— Docker build 不依赖 lockfile，新增 `pg` 会在 build 时重新 resolve。保持现状、零部署风险。本地生成的 lockfile 不提交。
-
-下一步：交棒 **Task 8B（WritingWorker）**——把 `createPgSqlClient` 接进 dataset draft API route。详见下方“交棒 8B”。
 
 ## 当前阶段
 
@@ -16,15 +14,16 @@ FrameworkWorker 持久身份已初始化；Phase -1 / Task 0 完成。generic fr
 
 ## 最近一次 session
 
+2026-06-08：Orchestrator 完成 8C 本地真实 PG 验证。FrameworkWorker 无需继续等待 8B；后续 framework 任务从 worker queue / artifact store / eval gate 等新任务重新派发。
+
 2026-06-06：完成 Task 8A Postgres SQL client adapter。新增 `packages/framework-store/src/pg-client.ts`（`createPgSqlClient`）+ `pg-client.test.ts`，package.json 加 `pg`/`@types/pg`/`vitest` + `test` script，index.ts export。验证：targeted vitest 5/5 绿（含 RED→GREEN）；全量 `pnpm --dir doc-maker/ui test` 10 files/30 tests 无回归；`pnpm --dir doc-maker/ui typecheck` EXIT=0；`git diff --check` 干净；commit 仅含 4 个 framework 文件（无 doc-maker / .agent / lockfile）。
 
-## 交棒 8B（WritingWorker）
+## 8A/8B/8C 结果
 
-- import：`import { createPgSqlClient } from "@source2video/framework-store";`
-- 用法 A（推荐，service 自管生命周期）：`const sql = createPgSqlClient({ connectionString: process.env.DATABASE_URL! });` → 传给 `createPostgresDatasetRepository(sql)`；进程关停时 `await sql.close()`（connectionString 分支 owns pool）。
-- 用法 B（复用既有 Pool）：`createPgSqlClient({ pool })`；`close()` 默认 no-op（caller 自管），需委托关闭传 `{ pool, ownsPool: true }`。
-- 类型：`PgSqlClient = FrameworkSqlClient & { readonly pool; close(): Promise<void> }`，`PgSqlClientInput` 也已 export。
-- **8B 必须处理 bundling**：一旦 Next.js app/route 运行时 import framework-store（会传递 import `pg`），需把 `pg` 加进 `next.config.ts` 的 `serverExternalPackages`，避免 Next 打包 pg。8A 未触发（当前无 app 运行时 import framework-store）。
+- 8A FrameworkWorker：`createPgSqlClient` 已交付。
+- 8B WritingWorker：`FRAMEWORK_DATABASE_URL` provider 已接入。
+- 8C Orchestrator：真实 Postgres migration + draft/eval dataset 落库已验证。
+- 后续如做生产 data plane，由 Orchestrator 处理生产 env/migration/deploy；FrameworkWorker 等待新的 framework 任务。
 
 ## 阻塞
 

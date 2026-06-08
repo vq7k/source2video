@@ -2,24 +2,19 @@
 
 ## 当前 actionable
 
-**repository wiring 进行中：8A 已验收，8B 待派**。任务拆三段：8A（FrameworkWorker，pg adapter）✅ / 8B（WritingWorker，生产 provider 接线）⏳ / 8C（真实本地 PG 端到端，依赖 user 拍 PG 来源）。
+**Writing dataset / repository wiring 已完成本地全闭环**（2026-06-08）：8A Framework PG client、8B Writing env-driven provider、8C 一次性 Docker Postgres migration + draft/eval dataset 落库验证均已通过。OpenSpec `add-writing-production-system` 剩余 13.4/13.5 已收口：Feedback Ledger 先进入 `writing_dataset_draft`，人工确认后复制进入正式 `writing_eval_dataset`，仍不做 Source Store / RAG / workflow builder。
 
-**Task 8A Postgres SQL client adapter 已验收通过**：FrameworkWorker 提交 `970e289 feat(framework): add postgres sql client adapter`。新增 `createPgSqlClient`（pg.Pool → FrameworkSqlClient，lifecycle-aware close）+ `pg`/`@types/pg` 依赖，export 到 framework-store index；5 个 TDD 测试用 fake pool（无真实 PG），commit 仅含 framework-store 4 文件。Orchestrator code review + 范围/命名核查通过（adapter 业务无关）；Worker 自验 targeted 5/5、全量 30 tests 无回归、typecheck 0、diff 干净。已提交未 push。
+本次新增/变更：
+- `promoteWritingDatasetDraftsForRun()`：要求显式 `confirmedBy`，把 draft item 复制为 `split="validation"` 的 human-confirmed eval item，不静默改写 draft dataset。
+- `POST /api/writing-runs/[runId]/dataset-drafts/confirm`：人工确认入口，未配 repository 仍返回 `503 repository_unconfigured`。
+- `writing-dataset-postgres.integration.test.ts`：默认 skip；设置 `RUN_POSTGRES_INTEGRATION=1` + `FRAMEWORK_DATABASE_URL` 后跑真实 Postgres。
+- 8C 真实验证：`postgres:16-alpine` on `localhost:5544`；migration 建出 10 张 `framework_*` 表；integration test 1/1 passed；直接查库 `writing_dataset_draft=1`、`writing_eval_dataset=1`；容器已清理。
 
-**lockfile 裁决（Orchestrator 已拍板，关闭升级）**：仓库从未 track `pnpm-lock.yaml`，且 `Dockerfile` 用 `pnpm install --no-frozen-lockfile` —— Docker build 不依赖 lockfile，新增 `pg` 会在 build 时重新 resolve。故**保持现状不纳管 lockfile**，与既有约定一致、零部署风险。
-
-下一步：派 **Task 8B（WritingWorker）**——把 `createPgSqlClient` 接进 Writing dataset draft 生产 provider（读 env → `createPostgresDatasetRepository` → 注入 `getWritingDatasetDraftRepository`），让 dataset API 从 `503 repository_unconfigured` 进入真实 persistence path。**8B 必须把 `pg` 加进 `next.config.ts` 的 `serverExternalPackages`**（FrameworkWorker 交棒提醒，避免 Next 打包 pg）；env 名按 Infra 报告用 `FRAMEWORK_DATABASE_URL`。8B 用 fake/test SQL client 做 integration test，不依赖真实 PG。
-
-**Task 8C（真实本地 PG migration + 端到端落库验证）**依赖 8B + **升级 user 拍 PG 来源**：复用另一项目 PG 建独立库 `source2video_framework` vs 一次性 `docker run postgres:16` dev 容器；本机还需装 `psql`（migrate 脚本 shell out psql）。
-
-本 session 前置回报（QA/Infra 临时 SubAgent 已回报）：
-- `.agent/sessions/2026-06-05-qa-task0-review/report.md` — Task 0 `bda65dd` 拓扑 **PASS**（topology 5/5、test 30/30、typecheck 0）
-- `.agent/sessions/2026-06-05-infra-local-data-plane-readiness/report.md` — 唯一必需 env=`FRAMEWORK_DATABASE_URL`；artifact filesystem first；S3/MinIO=`ARTIFACT_STORE_*`（后置）
-- `packages/.agent/sessions/2026-06-06-task-8a-pg-sql-client/handoff.md`
+下一步 actionable：做最终验证、提交、push；线上若要启用生产落库，需要在服务器 `/opt/source2video/.env` 配 `FRAMEWORK_DATABASE_URL` 并对生产 PG 执行 migration。未配置前，线上 dataset route 保持 503 是预期。
 
 ## 当前阶段
 
-**持久 Agent team 运行中；Writing Production v1 已上线；framework data plane 本地闭环（Postgres dataset persistence）已在真实 PG 验证打通**（2026-06-06）。
+**持久 Agent team 运行中；Writing Production v1 已上线；OpenSpec `add-writing-production-system` 已完成；framework data plane 的 Writing dataset 本地闭环已在真实 PG 验证打通**（2026-06-08）。
 
 Agent team：
 
@@ -45,6 +40,8 @@ Agent team：
 - 本地验证：`pnpm test` 4 files / 7 tests passed；`pnpm e2e` 6 passed；`pnpm build` passed。
 
 ## 最近一次 session
+
+**2026-06-08 完成 Writing dataset closure / 8C 本地闭环**：按 OpenSpec `add-writing-production-system` 剩余 13.4/13.5 推进。TDD 新增人工确认 promotion：`writing_dataset_draft` 仅保留 `needs_human_confirmation` 草稿，`promoteWritingDatasetDraftsForRun()` 要求 `confirmedBy` 后复制进入 `writing_eval_dataset`（`split=validation`、`reviewStatus=human_confirmed`）；新增 `/dataset-drafts/confirm` route。真实 8C 用 `postgres:16-alpine` on `localhost:5544` 应用 migration，10 张表复核通过；env-gated Postgres integration test 真实写入 draft/eval dataset 各 1 条；容器已清理。
 
 **2026-06-06 推进 repository wiring（QA/Infra 回报 + Task 8A 验收）**：(1) 派 QA 临时 SubAgent 复验 Task 0 `bda65dd` → PASS（拓扑干净，topology 5/5、test 30/30、typecheck 0；唯一非阻塞发现：Dockerfile `COPY packages` 是后续 `521f3c2` 才补，HEAD 已修复）。(2) 派 Infra 临时 SubAgent 出 local data plane readiness → 唯一必需 env=`FRAMEWORK_DATABASE_URL`，Postgres 接线代码已就绪，artifact filesystem first。(3) 设计 repository wiring 拆 8A/8B/8C，派 FrameworkWorker Task 8A：subagent 中途 ECONNRESET 但已完整完成并提交 `970e289`，自验通过、状态收尾、主动升级 lockfile。(4) Orchestrator 验收 8A 通过；裁决 lockfile **不纳管**（Dockerfile 用 `--no-frozen-lockfile`，零风险）。下一步派 8B。
 
