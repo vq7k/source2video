@@ -18,7 +18,7 @@ describe("writing page loading state", () => {
     expect(page).toContain("const [loadingRuns, setLoadingRuns] = useState(true)");
     expect(page).toContain("const initialWorkspaceLoading = loadingRuns && runs.length === 0");
     expect(page).toContain("{initialWorkspaceLoading ? <WritingWorkspaceLoading /> : null}");
-    expect(page).toContain("function WritingWorkspaceLoading()");
+    expect(page).toContain("@/components/writing-production/workspace-loading");
     expect(page).toContain('aria-busy={initialWorkspaceLoading ? "true" : undefined}');
   });
 });

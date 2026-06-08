@@ -40,6 +40,7 @@ import {
 import {
   DecisionQueuePanel,
 } from "@/components/writing-production/decision-panels";
+import { OverviewWorkspaceLoading } from "@/components/writing-production/workspace-loading";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -734,8 +735,11 @@ export default function WritingProductionPage() {
 
 function WritingProductionLoading() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f7f6f2] text-sm text-zinc-500">
-      正在加载工作台...
+    <main
+      className="h-screen overflow-hidden bg-[#f6f5f1] text-zinc-950"
+      aria-busy="true"
+    >
+      <OverviewWorkspaceLoading />
     </main>
   );
 }
@@ -857,6 +861,7 @@ function WritingProductionClient() {
   const autoCollapseAuxPanels = viewportWidth < 1180;
   const effectiveSidebarCollapsed = sidebarCollapsed || autoCollapseAuxPanels;
   const effectiveInspectorCollapsed = inspectorCollapsed || autoCollapseAuxPanels;
+  const initialWorkspaceLoading = !hasLoadedLatestRun;
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
@@ -1774,7 +1779,14 @@ function WritingProductionClient() {
   }
 
   return (
-    <main className="h-screen overflow-hidden bg-[#f6f5f1] text-zinc-950">
+    <main
+      className="h-screen overflow-hidden bg-[#f6f5f1] text-zinc-950"
+      aria-busy={initialWorkspaceLoading ? "true" : undefined}
+    >
+      {initialWorkspaceLoading ? (
+        <OverviewWorkspaceLoading />
+      ) : (
+        <>
       <ResizablePanelGroup
         direction="horizontal"
         defaultLayout={workbenchLayout}
@@ -1961,6 +1973,8 @@ function WritingProductionClient() {
           />
         </SheetContent>
       </Sheet>
+        </>
+      )}
     </main>
   );
 

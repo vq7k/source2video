@@ -6,7 +6,7 @@
 
 ## 已收口（本 session）
 
-- [x] `/writing` 首屏 loading 抖动修复：初始 runs 加载期间展示 busy skeleton，不先闪空态；runtime/typecheck/build/e2e 验证通过
+- [x] `/writing` + `/overview` 全局初始 loading 抖动修复：shared busy skeleton；初始 client 数据加载期间不先闪空态；runtime/typecheck/build/e2e 验证通过
 - [x] OpenSpec 13.4：Feedback Ledger -> `writing_dataset_draft`；人工确认 -> `writing_eval_dataset`，draft 不被静默改写
 - [x] OpenSpec 13.5：当前不做 Source Store / RAG / workflow builder，继续 Reference Paste + 既有 trace/eval 闭环
 - [x] 共享 PostgreSQL 线上切换：`ftai-postgres/source2video_framework` 已开库、迁移、写生产 env、部署并验收

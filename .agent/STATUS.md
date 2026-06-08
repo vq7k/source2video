@@ -2,7 +2,7 @@
 
 ## 当前 actionable
 
-**Writing Production 数据飞轮已完成线上全闭环，数据库拓扑已切到共享 PostgreSQL；本地已修复 `/writing` 首屏加载抖动**（2026-06-08）：OpenSpec `add-writing-production-system` 67/67 complete；线上已部署 `a067d24 fix(deploy): avoid docker hub rate limit in ci builds`；生产 `source2video` 复用共享 `ftai-postgres` 的独立 database/role `source2video_framework`，不再运行项目独立 `source2video-postgres`。本次修复将初始 runs 加载状态改为 busy skeleton，避免进入页面后先显示空态、数据返回后突然替换导致页面抖动。
+**Writing Production 数据飞轮已完成线上全闭环，数据库拓扑已切到共享 PostgreSQL；本地已完成写作工作台全局初始 loading 处理**（2026-06-08）：OpenSpec `add-writing-production-system` 67/67 complete；线上已部署 `a067d24 fix(deploy): avoid docker hub rate limit in ci builds`；生产 `source2video` 复用共享 `ftai-postgres` 的独立 database/role `source2video_framework`，不再运行项目独立 `source2video-postgres`。本次将 `/writing` 与 `/overview` 的 client-side 初始数据加载统一到 shared busy skeleton，避免进入页面后先显示空态、数据返回后突然替换导致页面抖动。
 
 线上验收事实：
 - `GET https://s2v.x-lin7.com/api/health` → 200；`HEAD /writing` → 200。
@@ -10,7 +10,7 @@
 - 最新保留验收数据 `online-shared-db-2026-06-08-a067d24`：run `run_c879dc71`，candidate `candidate_r1_1`，feedback `feedback_a719d1cc`，published package `rule_package_89160b83`。
 - shared DB dataset：`dataset_draft_run_c879dc71_feedback_a719d1cc` 写入 `writing_dataset_draft`；human confirm 后 `eval_dataset_item_run_c879dc71_feedback_a719d1cc` 写入 `writing_eval_dataset`，split=`validation`。当前 shared DB count：`writing_dataset_draft=3`、`writing_eval_dataset=3`。
 
-下一步 actionable：当前业务/数据闭环无阻塞；`/writing` loading 修复已本地验证，可按需 push CodeUp 触发线上部署；如继续硬化，补共享 DB 逻辑备份/恢复演练和 Caddy site block 长期 SOT。
+下一步 actionable：当前业务/数据闭环无阻塞；`/writing` + `/overview` 全局 loading 修复已本地验证，可按需 push CodeUp 触发线上部署；如继续硬化，补共享 DB 逻辑备份/恢复演练和 Caddy site block 长期 SOT。
 
 ## 当前阶段
 
@@ -42,7 +42,7 @@ Agent team：
 
 ## 最近一次 session
 
-**2026-06-08 `/writing` 首屏 loading 抖动修复**：定位 root cause 为 `loadingRuns` 初始值 `false`，导致 client component 首屏先渲染 composer/空态，`loadWorkspace()` 返回后再替换成真实数据。已改为初始 busy skeleton，并新增 runtime 静态防退化测试与 Playwright 延迟接口 e2e。验证：runtime 13 files / 47 tests（1 skipped）通过，typecheck 通过，build 通过，e2e 7/7 通过，`git diff --check` 通过。
+**2026-06-08 `/writing` + `/overview` 全局初始 loading 抖动修复**：定位 root cause 为 client component 首屏先渲染默认/空态，`useEffect` 中的 `listWritingRuns()` / `listRulePackages()` 返回后再替换成真实数据。已新增 shared `workspace-loading.tsx`，`/writing` 复用该模块，`/overview` 初始数据未加载前渲染 full shell skeleton 并设置 `aria-busy`。验证：runtime 14 files / 48 tests（1 skipped）通过，typecheck 通过，build 通过，e2e 8/8 通过，`git diff --check` 通过。
 
 **2026-06-08 共享 PostgreSQL 切线上完成**：按用户确认的共享库方案执行。远端开通 `source2video_framework` database/role；迁移旧内置 PG 中 `framework_datasets=2`、`framework_dataset_items=4`；写入 `/opt/source2video/.env` 并备份为 `.env.bak.shared-db-20260608-121332`；同步云效 pipeline YAML；push 后 run `19` 因 Docker Hub rate limit 失败，提交 `a067d24` 改用 `public.ecr.aws/docker/library/node:22-slim` 并复制 `docs/` 供容器内 tests；run `20` 成功部署。线上 compose 不再含 `source2video-postgres`，容器 image `a067d241` healthy；shared DB 真实写入最新保留验收 run `run_c879dc71` 的 draft/eval dataset。迁移中发现手工 schema 初始由 `ftai` 创建导致 app role 非 owner，已将 public schema 下所有 framework tables owner 改为 `source2video_framework` 后验收通过。
 

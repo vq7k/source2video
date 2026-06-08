@@ -29,6 +29,10 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  WritingTopicListLoading,
+  WritingWorkspaceLoading,
+} from "@/components/writing-production/workspace-loading";
+import {
   compileWritingRulePatch,
   confirmWritingRun,
   createRulePackageDraft,
@@ -1096,68 +1100,6 @@ export default function LightweightWritingWorkbenchPage() {
         </ScrollArea>
       </div>
     </main>
-  );
-}
-
-function WritingTopicListLoading() {
-  return (
-    <>
-      {Array.from({ length: 3 }, (_, index) => (
-        <div
-          key={index}
-          className="rounded-md border border-transparent bg-white/45 px-3 py-3"
-        >
-          <div className="h-4 w-4/5 animate-pulse rounded bg-zinc-200" />
-          <div className="mt-3 flex gap-2">
-            <div className="h-3 w-10 animate-pulse rounded bg-zinc-200" />
-            <div className="h-3 w-14 animate-pulse rounded bg-zinc-200" />
-            <div className="h-3 w-20 animate-pulse rounded bg-zinc-200" />
-          </div>
-        </div>
-      ))}
-    </>
-  );
-}
-
-function WritingWorkspaceLoading() {
-  return (
-    <div className="flex min-h-[620px] flex-col gap-5">
-      <Card>
-        <CardHeader>
-          <div className="h-5 w-24 animate-pulse rounded bg-zinc-200" />
-        </CardHeader>
-        <CardContent>
-          <div className="h-32 animate-pulse rounded-md bg-zinc-100" />
-          <div className="mt-3 flex flex-wrap gap-2">
-            <div className="h-8 w-40 animate-pulse rounded-full bg-zinc-100" />
-            <div className="h-8 w-48 animate-pulse rounded-full bg-zinc-100" />
-            <div className="h-8 w-44 animate-pulse rounded-full bg-zinc-100" />
-          </div>
-        </CardContent>
-        <CardFooter className="justify-end">
-          <div className="h-9 w-28 animate-pulse rounded-md bg-zinc-200" />
-        </CardFooter>
-      </Card>
-
-      <Card className="border-zinc-200">
-        <CardHeader>
-          <div className="mb-2 flex gap-2">
-            <div className="h-6 w-20 animate-pulse rounded-full bg-zinc-100" />
-            <div className="h-6 w-16 animate-pulse rounded-full bg-zinc-100" />
-          </div>
-          <div className="h-6 w-2/3 animate-pulse rounded bg-zinc-200" />
-          <div className="mt-2 h-4 w-5/6 animate-pulse rounded bg-zinc-100" />
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3 rounded-md bg-zinc-50 p-4">
-            <div className="h-4 w-full animate-pulse rounded bg-zinc-200" />
-            <div className="h-4 w-11/12 animate-pulse rounded bg-zinc-200" />
-            <div className="h-4 w-10/12 animate-pulse rounded bg-zinc-200" />
-            <div className="h-4 w-3/4 animate-pulse rounded bg-zinc-200" />
-          </div>
-        </CardContent>
-      </Card>
-    </div>
   );
 }
 
