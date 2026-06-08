@@ -7,8 +7,8 @@
 线上验收事实：
 - `GET https://s2v.x-lin7.com/api/health` → 200；`HEAD /writing` → 200。
 - `POST /api/writing-runs/missing-run/dataset-drafts` → 404 `Writing run not found`，说明 repository 已配置，不再是旧的 503。
-- 真实线上 run `run_2f8ec678`：confirm → feedback → rule patch → finalize → rule package publish 全部 200；published package `rule_package_dd760243`。
-- dataset draft：`writing_dataset_draft` itemCount=1；human confirm 后 eval dataset：`writing_eval_dataset` itemCount=1，split=`validation`。
+- 最新保留验收数据 `online-acceptance-2026-06-08-keep-data`：run `run_a51abf14`，candidate `candidate_r1_1`，feedback `feedback_531b81ef`，published package `rule_package_8b0b47cc`。
+- dataset draft：`dataset_draft_run_a51abf14_feedback_531b81ef` 写入 `writing_dataset_draft`；human confirm 后 `eval_dataset_item_run_a51abf14_feedback_531b81ef` 写入 `writing_eval_dataset`，split=`validation`。
 
 下一步 actionable：如继续做上线硬化，给生产 `/opt/source2video/.env` 设置强 `SOURCE2VIDEO_POSTGRES_PASSWORD` 后重部署一次；如继续做产品，另起下一阶段 OpenSpec。当前业务闭环无阻塞。
 
@@ -34,12 +34,14 @@ Agent team：
 - 部署：CodeUp `main` 自动触发云效流水线 `5006844`
 - 最近部署提交：`709d501 feat(deploy): add postgres data plane`；镜像 tag `709d501c`
 - 最近部署流水线：`pipelineRunId=17` `SUCCESS`；镜像构建 `SUCCESS`；部署 `SUCCESS`；deployOrderId `63525694`
-- 线上验收：`/api/health` ok；`/writing` ok；`run_2f8ec678` 最终 `finalized`，feedback 1，rule patch 1，published rule package `rule_package_dd760243`，dataset draft/eval confirm 均 200。
+- 线上验收：`/api/health` ok；`/writing` ok；最新保留验收 run `run_a51abf14` 最终 `finalized`，feedback 1，rule patch 1，published rule package `rule_package_8b0b47cc`，dataset draft/eval confirm 均 200。
 - 生产网关修复：`ftai-caddy` 原 Caddyfile 缺少 `s2v.x-lin7.com` HTTPS site block；已在服务器 `/opt/from-fullstack-to-ai/infra/Caddyfile` 追加并 reload，备份为 `Caddyfile.bak.s2v-20260605-085109`。
 - 本次本地收口新增：`/writing` 反馈再来一轮 + Rule Package 草稿/发布；`/framework?traceId=` Trace 已定位 + ScoreSink 状态。
 - 本地验证：`pnpm test` 4 files / 7 tests passed；`pnpm e2e` 6 passed；`pnpm build` passed。
 
 ## 最近一次 session
+
+**2026-06-08 线上验收并保留测试数据**：按用户要求重新跑公网验收且不清理测试数据。tag=`online-acceptance-2026-06-08-keep-data`；health/page/repository configured 通过；run `run_a51abf14` 完成 confirm、feedback、rule patch、finalize、rule package publish；`writing_dataset_draft` 写入 `dataset_draft_run_a51abf14_feedback_531b81ef`，人工确认后 `writing_eval_dataset` 写入 `eval_dataset_item_run_a51abf14_feedback_531b81ef`；read-back 确认 run status=`finalized`、feedbackCount=1、rulePackageCount=1、containsTag=true。
 
 **2026-06-08 线上完成 Writing dataset / data plane 全闭环**：先提交 `98f08a8` 修复 Docker runtime assets 与 missing-run 404，再提交 `709d501` 增加内置 `source2video-postgres` data plane、生产 lazy migration、pipeline/compose 同步。run `15` 修复线上 500→503；run `16` 成功但云端流水线配置仍旧，未展开内层 `deploy.tgz`，导致仍未部署新 compose；已用 `UpdatePipeline` 同步云效 pipeline config。run `17` 成功部署新 compose，VMDeploy 日志确认 `source2video-postgres` started/healthy。线上 API 闭环 run `run_2f8ec678`：confirm、feedback、rule patch、finalize、rule package publish、`writing_dataset_draft`、`writing_eval_dataset` confirm 全部通过。随后执行 `openspec archive -y add-writing-production-system`，主规格生成 4 个 capability spec，change 归档到 `openspec/changes/archive/2026-06-08-add-writing-production-system/`。
 
