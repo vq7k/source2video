@@ -95,4 +95,14 @@ describe("framework package topology", () => {
 
     expect(dockerfile).toContain("COPY packages ./packages");
   });
+
+  it("installs root framework-store dependencies for production Docker tests and builds", () => {
+    const dockerfile = readText("Dockerfile");
+
+    expect(dockerfile).toContain("COPY packages/framework-store/package.json ./packages/framework-store/package.json");
+    expect(dockerfile).toContain("pnpm --dir /app/packages/framework-store install --no-frozen-lockfile");
+    expect(dockerfile).toContain(
+      "COPY --from=deps /app/packages/framework-store/node_modules ./packages/framework-store/node_modules",
+    );
+  });
 });

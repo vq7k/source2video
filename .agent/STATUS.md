@@ -10,7 +10,7 @@
 - `writing-dataset-postgres.integration.test.ts`：默认 skip；设置 `RUN_POSTGRES_INTEGRATION=1` + `FRAMEWORK_DATABASE_URL` 后跑真实 Postgres。
 - 8C 真实验证：`postgres:16-alpine` on `localhost:5544`；migration 建出 10 张 `framework_*` 表；integration test 1/1 passed；直接查库 `writing_dataset_draft=1`、`writing_eval_dataset=1`；容器已清理。
 
-下一步 actionable：做最终验证、提交、push；线上若要启用生产落库，需要在服务器 `/opt/source2video/.env` 配 `FRAMEWORK_DATABASE_URL` 并对生产 PG 执行 migration。未配置前，线上 dataset route 保持 503 是预期。
+下一步 actionable：提交 Dockerfile follow-up 并重新 push CodeUp 触发部署。pipeline run `13` 已失败，根因是 Docker build 没安装 `packages/framework-store` 的 `pg` / `@types/pg`；已用 topology test + 本地 `docker build -t source2video:deploy-verify .` 验证修复。线上若要启用生产落库，需要在服务器 `/opt/source2video/.env` 配 `FRAMEWORK_DATABASE_URL` 并对生产 PG 执行 migration。未配置前，线上 dataset route 保持 503 是预期。
 
 ## 当前阶段
 
@@ -42,6 +42,8 @@ Agent team：
 ## 最近一次 session
 
 **2026-06-08 完成 Writing dataset closure / 8C 本地闭环**：按 OpenSpec `add-writing-production-system` 剩余 13.4/13.5 推进。TDD 新增人工确认 promotion：`writing_dataset_draft` 仅保留 `needs_human_confirmation` 草稿，`promoteWritingDatasetDraftsForRun()` 要求 `confirmedBy` 后复制进入 `writing_eval_dataset`（`split=validation`、`reviewStatus=human_confirmed`）；新增 `/dataset-drafts/confirm` route。真实 8C 用 `postgres:16-alpine` on `localhost:5544` 应用 migration，10 张表复核通过；env-gated Postgres integration test 真实写入 draft/eval dataset 各 1 条；容器已清理。
+
+**2026-06-08 部署 follow-up**：push `849eacc` 后 CodeUp pipeline run `13` 在镜像构建阶段失败；云效日志显示容器内测试找不到 `pg`（`/app/packages/framework-store/src/pg-client.ts` import）。根因是 Dockerfile 只安装 `doc-maker/ui` dependencies，未安装 root `packages/framework-store` dependencies。已补 Dockerfile deps stage 安装/copy `packages/framework-store/node_modules`，并新增 topology test；本地 `docker build -t source2video:deploy-verify .` 通过。
 
 **2026-06-06 推进 repository wiring（QA/Infra 回报 + Task 8A 验收）**：(1) 派 QA 临时 SubAgent 复验 Task 0 `bda65dd` → PASS（拓扑干净，topology 5/5、test 30/30、typecheck 0；唯一非阻塞发现：Dockerfile `COPY packages` 是后续 `521f3c2` 才补，HEAD 已修复）。(2) 派 Infra 临时 SubAgent 出 local data plane readiness → 唯一必需 env=`FRAMEWORK_DATABASE_URL`，Postgres 接线代码已就绪，artifact filesystem first。(3) 设计 repository wiring 拆 8A/8B/8C，派 FrameworkWorker Task 8A：subagent 中途 ECONNRESET 但已完整完成并提交 `970e289`，自验通过、状态收尾、主动升级 lockfile。(4) Orchestrator 验收 8A 通过；裁决 lockfile **不纳管**（Dockerfile 用 `--no-frozen-lockfile`，零风险）。下一步派 8B。
 

@@ -9,6 +9,10 @@ RUN npm config set registry https://registry.npmmirror.com \
 COPY doc-maker/ui/package.json doc-maker/ui/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
+WORKDIR /app
+COPY packages/framework-store/package.json ./packages/framework-store/package.json
+RUN pnpm --dir /app/packages/framework-store install --no-frozen-lockfile
+
 FROM node:22-slim AS builder
 
 WORKDIR /app
@@ -17,6 +21,7 @@ RUN npm config set registry https://registry.npmmirror.com \
   && npm install -g pnpm@10.33.0
 
 COPY --from=deps /app/doc-maker/ui/node_modules ./doc-maker/ui/node_modules
+COPY --from=deps /app/packages/framework-store/node_modules ./packages/framework-store/node_modules
 COPY Dockerfile ./Dockerfile
 COPY packages ./packages
 COPY doc-maker/packages ./doc-maker/packages

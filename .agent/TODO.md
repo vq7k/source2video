@@ -2,7 +2,7 @@
 
 ## 当前 in-progress
 
-- [ ] **最终验证 + 提交 + push**：`openspec validate add-writing-production-system`、`pnpm --dir doc-maker/ui test`、`pnpm --dir doc-maker/ui typecheck`、`git diff --check` 后提交并推送。
+- [ ] **部署 follow-up 提交 + push**：Dockerfile 已修复 pipeline run `13` 的 `pg` 缺失；重新验证、提交并 push CodeUp 触发 pipeline run `14`。
 - [ ] **生产 data plane 启用（上线前置）**：服务器 `/opt/source2video/.env` 配 `FRAMEWORK_DATABASE_URL`，对生产 PG 跑 `packages/framework-store/migrations/0001_framework_core.sql`，再部署/验 `/api/writing-runs/[runId]/dataset-drafts` 与 `/confirm` route。
 
 ## 已收口（本 session）
@@ -11,6 +11,7 @@
 - [x] OpenSpec 13.5：当前不做 Source Store / RAG / workflow builder，继续 Reference Paste + 既有 trace/eval 闭环
 - [x] Task 8B：Writing provider 接 `FRAMEWORK_DATABASE_URL` -> `createPgSqlClient` -> `createPostgresDatasetRepository`（commit `c91b5f0`）
 - [x] Task 8C：一次性 Docker Postgres `5544` migration + env-gated integration test 真实落库通过；容器已清理
+- [x] 部署 run `13` 失败已定位：Docker build 缺 `packages/framework-store` dependencies；本地 Docker build 已验证修复
 - [x] QA 临时 SubAgent 回报 Task 0 commit review → **PASS**（report.md 已落）
 - [x] Infra 临时 SubAgent 回报 Local data plane readiness → env=`FRAMEWORK_DATABASE_URL`（report.md 已落）
 - [x] 设计 repository wiring 拆 8A/8B/8C

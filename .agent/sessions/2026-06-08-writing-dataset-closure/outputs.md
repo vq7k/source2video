@@ -49,5 +49,7 @@ Observed:
 
 ## Follow-up
 
-- Run final verification and commit.
-- For production closure: configure production `FRAMEWORK_DATABASE_URL`, run migration against production PG, deploy, then verify dataset draft and confirmation routes online.
+- Initial CodeUp pipeline run `13` failed in Docker build because the image installed only `doc-maker/ui` dependencies; tests importing `@source2video/framework-store` could not resolve `pg` from `/app/packages/framework-store/src/pg-client.ts`.
+- Fix: Dockerfile now installs `packages/framework-store` dependencies in the deps stage and copies `packages/framework-store/node_modules` into the builder stage. Topology test covers this.
+- Local `docker build -t source2video:deploy-verify .` passed after the fix, including container `pnpm test` and `pnpm build`.
+- For production data-plane closure: configure production `FRAMEWORK_DATABASE_URL`, run migration against production PG, deploy, then verify dataset draft and confirmation routes online.
