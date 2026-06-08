@@ -1,5 +1,7 @@
 # source2video / doc-maker UI - Next.js standalone image
-FROM node:22-slim AS deps
+ARG NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:22-slim
+
+FROM ${NODE_BASE_IMAGE} AS deps
 
 WORKDIR /app/doc-maker/ui
 
@@ -13,7 +15,7 @@ WORKDIR /app
 COPY packages/framework-store/package.json ./packages/framework-store/package.json
 RUN pnpm --dir /app/packages/framework-store install --no-frozen-lockfile
 
-FROM node:22-slim AS builder
+FROM ${NODE_BASE_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -25,6 +27,7 @@ COPY --from=deps /app/packages/framework-store/node_modules ./packages/framework
 COPY Dockerfile ./Dockerfile
 COPY docker-compose.yml ./docker-compose.yml
 COPY flow.yml ./flow.yml
+COPY docs ./docs
 COPY packages ./packages
 COPY doc-maker/packages ./doc-maker/packages
 COPY doc-maker/ui ./doc-maker/ui
@@ -32,7 +35,7 @@ COPY doc-maker/ui ./doc-maker/ui
 WORKDIR /app/doc-maker/ui
 RUN pnpm test && pnpm build
 
-FROM node:22-slim AS runner
+FROM ${NODE_BASE_IMAGE} AS runner
 
 WORKDIR /app
 

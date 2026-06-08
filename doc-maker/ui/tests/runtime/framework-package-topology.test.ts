@@ -96,6 +96,17 @@ describe("framework package topology", () => {
     expect(dockerfile).toContain("COPY packages ./packages");
     expect(dockerfile).toContain("COPY docker-compose.yml ./docker-compose.yml");
     expect(dockerfile).toContain("COPY flow.yml ./flow.yml");
+    expect(dockerfile).toContain("COPY docs ./docs");
+  });
+
+  it("uses an explicit non-Docker-Hub Node base image for production Docker builds", () => {
+    const dockerfile = readText("Dockerfile");
+
+    expect(dockerfile).toContain("ARG NODE_BASE_IMAGE=public.ecr.aws/docker/library/node:22-slim");
+    expect(dockerfile).toContain("FROM ${NODE_BASE_IMAGE} AS deps");
+    expect(dockerfile).toContain("FROM ${NODE_BASE_IMAGE} AS builder");
+    expect(dockerfile).toContain("FROM ${NODE_BASE_IMAGE} AS runner");
+    expect(dockerfile).not.toContain("FROM node:22-slim");
   });
 
   it("installs root framework-store dependencies for production Docker tests and builds", () => {
