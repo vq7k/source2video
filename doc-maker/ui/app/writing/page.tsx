@@ -392,7 +392,7 @@ export default function LightweightWritingWorkbenchPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dismissedRoundCueIds, setDismissedRoundCueIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loadingRuns, setLoadingRuns] = useState(false);
+  const [loadingRuns, setLoadingRuns] = useState(true);
   const [copied, setCopied] = useState(false);
   const [rulePackageTask, setRulePackageTask] = useState<"draft" | "publish" | null>(null);
   const streamTimersRef = useRef<number[]>([]);
@@ -515,6 +515,7 @@ export default function LightweightWritingWorkbenchPage() {
   const busy = runtimeAction !== null;
   const showTopicComposer = !activeTopic?.recommendedCandidate;
   const showInputExamples = showTopicComposer && quickInput.trim().length === 0;
+  const initialWorkspaceLoading = loadingRuns && runs.length === 0;
 
   function startNewTopic() {
     setActiveTopicId(null);
@@ -853,7 +854,9 @@ export default function LightweightWritingWorkbenchPage() {
               </button>
               {historyOpen ? (
                 <div className="mt-2 flex max-h-44 flex-col gap-2 overflow-y-auto pr-1">
-                  {pastTopics.length ? (
+                  {initialWorkspaceLoading ? (
+                    <WritingTopicListLoading />
+                  ) : pastTopics.length ? (
                     pastTopics.map((topic) => {
                       const finalized = Boolean(topic.run.finalizedCandidateId);
                       return (
@@ -892,7 +895,14 @@ export default function LightweightWritingWorkbenchPage() {
           ) : null}
           {leftCollapsed ? (
             <div className="flex min-h-0 flex-1 flex-col items-center gap-2 p-2">
-              {currentTopics.length ? (
+              {initialWorkspaceLoading ? (
+                Array.from({ length: 3 }, (_, index) => (
+                  <div
+                    key={index}
+                    className="size-10 animate-pulse rounded-md border bg-white/60"
+                  />
+                ))
+              ) : currentTopics.length ? (
                 currentTopics.map((topic, index) => {
                   const active = topic.id === activeTopicId;
                   const finalized = Boolean(topic.run.finalizedCandidateId);
@@ -932,7 +942,9 @@ export default function LightweightWritingWorkbenchPage() {
                 <div>
                   <div className="text-xs font-medium text-muted-foreground">本次记录</div>
                 </div>
-                {currentTopics.length ? (
+                {initialWorkspaceLoading ? (
+                  <WritingTopicListLoading />
+                ) : currentTopics.length ? (
                   currentTopics.map((topic) => {
                     const active = topic.id === activeTopicId;
                     const finalized = Boolean(topic.run.finalizedCandidateId);
@@ -978,9 +990,13 @@ export default function LightweightWritingWorkbenchPage() {
           )}
         </aside>
 
-        <ScrollArea className="min-h-0 bg-white">
+        <ScrollArea
+          className="min-h-0 bg-white"
+          aria-busy={initialWorkspaceLoading ? "true" : undefined}
+        >
           <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-5 py-6">
-            {showTopicComposer ? (
+            {initialWorkspaceLoading ? <WritingWorkspaceLoading /> : null}
+            {!initialWorkspaceLoading && showTopicComposer ? (
               <Card>
                 <CardHeader>
                   <CardTitle>输入文本</CardTitle>
@@ -1020,7 +1036,7 @@ export default function LightweightWritingWorkbenchPage() {
               </Card>
             ) : null}
 
-            {error ? (
+            {!initialWorkspaceLoading && error ? (
               <div className="flex items-start justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                 <span className="min-w-0 break-words">{error}</span>
                 <Button
@@ -1037,11 +1053,11 @@ export default function LightweightWritingWorkbenchPage() {
               </div>
             ) : null}
 
-            {activeTopic ? <TopicContextDisclosure topic={activeTopic} /> : null}
+            {!initialWorkspaceLoading && activeTopic ? <TopicContextDisclosure topic={activeTopic} /> : null}
 
-            {runtimeAction ? <RuntimeProgress action={runtimeAction} lines={streamLines} /> : null}
+            {!initialWorkspaceLoading && runtimeAction ? <RuntimeProgress action={runtimeAction} lines={streamLines} /> : null}
 
-            {!activeTopic?.recommendedCandidate ? (
+            {!initialWorkspaceLoading && !activeTopic?.recommendedCandidate ? (
               <Card className="border-dashed">
                 <CardHeader>
                   <CardTitle>{activeTopic ? "等待生成" : "尚未生成"}</CardTitle>
@@ -1052,7 +1068,7 @@ export default function LightweightWritingWorkbenchPage() {
                   </CardDescription>
                 </CardHeader>
               </Card>
-            ) : (
+            ) : !initialWorkspaceLoading && activeTopic?.recommendedCandidate ? (
               <TopicResult
                 topic={activeTopic}
                 visibleRound={visibleRound}
@@ -1075,11 +1091,73 @@ export default function LightweightWritingWorkbenchPage() {
                 roundCueDismissed={dismissedRoundCueIds.includes(activeTopic.id)}
                 onDismissRoundCue={dismissRoundCue}
               />
-            )}
+            ) : null}
           </div>
         </ScrollArea>
       </div>
     </main>
+  );
+}
+
+function WritingTopicListLoading() {
+  return (
+    <>
+      {Array.from({ length: 3 }, (_, index) => (
+        <div
+          key={index}
+          className="rounded-md border border-transparent bg-white/45 px-3 py-3"
+        >
+          <div className="h-4 w-4/5 animate-pulse rounded bg-zinc-200" />
+          <div className="mt-3 flex gap-2">
+            <div className="h-3 w-10 animate-pulse rounded bg-zinc-200" />
+            <div className="h-3 w-14 animate-pulse rounded bg-zinc-200" />
+            <div className="h-3 w-20 animate-pulse rounded bg-zinc-200" />
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function WritingWorkspaceLoading() {
+  return (
+    <div className="flex min-h-[620px] flex-col gap-5">
+      <Card>
+        <CardHeader>
+          <div className="h-5 w-24 animate-pulse rounded bg-zinc-200" />
+        </CardHeader>
+        <CardContent>
+          <div className="h-32 animate-pulse rounded-md bg-zinc-100" />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <div className="h-8 w-40 animate-pulse rounded-full bg-zinc-100" />
+            <div className="h-8 w-48 animate-pulse rounded-full bg-zinc-100" />
+            <div className="h-8 w-44 animate-pulse rounded-full bg-zinc-100" />
+          </div>
+        </CardContent>
+        <CardFooter className="justify-end">
+          <div className="h-9 w-28 animate-pulse rounded-md bg-zinc-200" />
+        </CardFooter>
+      </Card>
+
+      <Card className="border-zinc-200">
+        <CardHeader>
+          <div className="mb-2 flex gap-2">
+            <div className="h-6 w-20 animate-pulse rounded-full bg-zinc-100" />
+            <div className="h-6 w-16 animate-pulse rounded-full bg-zinc-100" />
+          </div>
+          <div className="h-6 w-2/3 animate-pulse rounded bg-zinc-200" />
+          <div className="mt-2 h-4 w-5/6 animate-pulse rounded bg-zinc-100" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3 rounded-md bg-zinc-50 p-4">
+            <div className="h-4 w-full animate-pulse rounded bg-zinc-200" />
+            <div className="h-4 w-11/12 animate-pulse rounded bg-zinc-200" />
+            <div className="h-4 w-10/12 animate-pulse rounded bg-zinc-200" />
+            <div className="h-4 w-3/4 animate-pulse rounded bg-zinc-200" />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
