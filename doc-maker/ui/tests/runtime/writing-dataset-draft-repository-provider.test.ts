@@ -21,10 +21,12 @@ import type {
 
 const createPgSqlClient = vi.fn();
 const createPostgresDatasetRepository = vi.fn();
+const runFrameworkStoreMigrations = vi.fn();
 
 vi.mock("@source2video/framework-store", () => ({
   createPgSqlClient,
   createPostgresDatasetRepository,
+  runFrameworkStoreMigrations,
 }));
 
 function createInput(): CreateWritingRunInput {
@@ -118,6 +120,8 @@ describe("writing dataset draft repository provider", () => {
     vi.resetModules();
     createPgSqlClient.mockReset();
     createPostgresDatasetRepository.mockReset();
+    runFrameworkStoreMigrations.mockReset();
+    runFrameworkStoreMigrations.mockResolvedValue([]);
     delete process.env.FRAMEWORK_DATABASE_URL;
 
     storeDir = await mkdtemp(path.join(os.tmpdir(), "doc-maker-dataset-provider-"));
@@ -142,7 +146,7 @@ describe("writing dataset draft repository provider", () => {
     const mod = await import("@/lib/writing-dataset-draft-repository");
     const repository = mod.getWritingDatasetDraftRepository();
 
-    expect(repository).toBe(fakeRepository);
+    expect(repository).not.toBeNull();
     expect(createPgSqlClient).toHaveBeenCalledTimes(1);
     expect(createPgSqlClient).toHaveBeenCalledWith({
       connectionString: "postgres://framework:secret@db.internal:5432/framework",
@@ -150,8 +154,45 @@ describe("writing dataset draft repository provider", () => {
     expect(createPostgresDatasetRepository).toHaveBeenCalledWith(fakeClient);
 
     const again = mod.getWritingDatasetDraftRepository();
-    expect(again).toBe(fakeRepository);
+    expect(again).toBe(repository);
     expect(createPgSqlClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs framework store migrations before first dataset repository access", async () => {
+    process.env.FRAMEWORK_DATABASE_URL = "postgres://framework:secret@db.internal:5432/framework";
+    const callOrder: string[] = [];
+    const fakeClient = { marker: "pg-sql-client" };
+    const fakeRepository = new FakeDatasetRepository();
+    createPgSqlClient.mockReturnValue(fakeClient);
+    createPostgresDatasetRepository.mockReturnValue({
+      ...fakeRepository,
+      getDataset: async (datasetId: string) => {
+        callOrder.push(`get:${datasetId}`);
+        return fakeRepository.getDataset(datasetId);
+      },
+      putDataset: async (dataset: FrameworkDatasetRecord) => {
+        callOrder.push(`put:${dataset.id}`);
+        return fakeRepository.putDataset(dataset);
+      },
+      appendDatasetItem: async (datasetId: string, item: FrameworkDatasetItem) => {
+        callOrder.push(`append:${datasetId}`);
+        return fakeRepository.appendDatasetItem(datasetId, item);
+      },
+    });
+    runFrameworkStoreMigrations.mockImplementation(async () => {
+      callOrder.push("migrate");
+    });
+
+    const mod = await import("@/lib/writing-dataset-draft-repository");
+    const repository = mod.getWritingDatasetDraftRepository();
+
+    expect(repository).not.toBeNull();
+    await repository!.getDataset?.("writing_dataset_draft");
+    await repository!.getDataset?.("writing_eval_dataset");
+
+    expect(runFrameworkStoreMigrations).toHaveBeenCalledTimes(1);
+    expect(runFrameworkStoreMigrations).toHaveBeenCalledWith(fakeClient);
+    expect(callOrder).toEqual(["migrate", "get:writing_dataset_draft", "get:writing_eval_dataset"]);
   });
 
   it("returns null (keeping the 503 path) when FRAMEWORK_DATABASE_URL is unset", async () => {
@@ -207,6 +248,7 @@ describe("writing dataset draft repository provider", () => {
     expect(createPgSqlClient).toHaveBeenCalledWith({
       connectionString: "postgres://framework:secret@db.internal:5432/framework",
     });
+    expect(runFrameworkStoreMigrations).toHaveBeenCalledTimes(1);
     expect(repository.appended).toHaveLength(1);
   });
 });

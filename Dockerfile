@@ -23,6 +23,8 @@ RUN npm config set registry https://registry.npmmirror.com \
 COPY --from=deps /app/doc-maker/ui/node_modules ./doc-maker/ui/node_modules
 COPY --from=deps /app/packages/framework-store/node_modules ./packages/framework-store/node_modules
 COPY Dockerfile ./Dockerfile
+COPY docker-compose.yml ./docker-compose.yml
+COPY flow.yml ./flow.yml
 COPY packages ./packages
 COPY doc-maker/packages ./doc-maker/packages
 COPY doc-maker/ui ./doc-maker/ui

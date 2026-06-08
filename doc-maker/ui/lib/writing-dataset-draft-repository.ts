@@ -1,4 +1,8 @@
-import { createPgSqlClient, createPostgresDatasetRepository } from "@source2video/framework-store";
+import {
+  createPgSqlClient,
+  createPostgresDatasetRepository,
+  runFrameworkStoreMigrations,
+} from "@source2video/framework-store";
 import type { PgSqlClient } from "@source2video/framework-store";
 import type { WritingDatasetDraftRepository } from "@doc-maker/writing-domain/dataset-draft-persistence";
 
@@ -8,6 +12,37 @@ let repositoryProvider: RepositoryProvider | null = null;
 
 let cachedClient: PgSqlClient | null = null;
 let cachedRepository: WritingDatasetDraftRepository | null = null;
+let migrationPromise: Promise<void> | null = null;
+
+function repositoryWithMigration(
+  repository: WritingDatasetDraftRepository,
+  client: PgSqlClient,
+): WritingDatasetDraftRepository {
+  async function ensureMigrated() {
+    migrationPromise ??= runFrameworkStoreMigrations(client)
+      .then(() => undefined)
+      .catch((error) => {
+        migrationPromise = null;
+        throw error;
+      });
+    await migrationPromise;
+  }
+
+  return {
+    async getDataset(datasetId) {
+      await ensureMigrated();
+      return repository.getDataset ? repository.getDataset(datasetId) : null;
+    },
+    async putDataset(dataset) {
+      await ensureMigrated();
+      return repository.putDataset(dataset);
+    },
+    async appendDatasetItem(datasetId, item) {
+      await ensureMigrated();
+      return repository.appendDatasetItem(datasetId, item);
+    },
+  };
+}
 
 /**
  * Default production provider: when `FRAMEWORK_DATABASE_URL` is configured, lazily
@@ -23,7 +58,10 @@ function resolveDefaultRepository(): WritingDatasetDraftRepository | null {
 
   if (!cachedRepository) {
     cachedClient = createPgSqlClient({ connectionString });
-    cachedRepository = createPostgresDatasetRepository(cachedClient);
+    cachedRepository = repositoryWithMigration(
+      createPostgresDatasetRepository(cachedClient),
+      cachedClient,
+    );
   }
 
   return cachedRepository;

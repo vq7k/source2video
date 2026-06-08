@@ -94,6 +94,8 @@ describe("framework package topology", () => {
     const dockerfile = readText("Dockerfile");
 
     expect(dockerfile).toContain("COPY packages ./packages");
+    expect(dockerfile).toContain("COPY docker-compose.yml ./docker-compose.yml");
+    expect(dockerfile).toContain("COPY flow.yml ./flow.yml");
   });
 
   it("installs root framework-store dependencies for production Docker tests and builds", () => {
@@ -118,5 +120,27 @@ describe("framework package topology", () => {
     expect(dockerfile).toContain(
       "COPY --from=builder --chown=node:node /app/packages/framework-store/node_modules ./node_modules",
     );
+  });
+
+  it("provides an internal Postgres data plane in production compose", () => {
+    const compose = readText("docker-compose.yml");
+
+    expect(compose).toContain("FRAMEWORK_DATABASE_URL:");
+    expect(compose).toContain("source2video-postgres:5432/source2video_framework");
+    expect(compose).toContain("source2video-postgres:");
+    expect(compose).toContain("postgres:16-alpine");
+    expect(compose).toContain("./data/postgres:/var/lib/postgresql/data");
+  });
+
+  it("keeps deploy ownership changes away from the Postgres data directory", () => {
+    const flow = readText("flow.yml");
+
+    expect(flow).toContain(
+      'mkdir -p "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime" "$APP/data/postgres"',
+    );
+    expect(flow).toContain(
+      'chown -R 1000:1000 "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime"',
+    );
+    expect(flow).not.toContain('chown -R 1000:1000 "$APP/data"');
   });
 });

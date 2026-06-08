@@ -25,10 +25,14 @@ services:
       DOC_MAKER_LLM_PROVIDER: ${DOC_MAKER_LLM_PROVIDER:-openai-compatible}
       DOC_MAKER_LLM_BASE_URL: ${DOC_MAKER_LLM_BASE_URL:-https://api.deepseek.com}
       DOC_MAKER_LLM_MODEL: ${DOC_MAKER_LLM_MODEL:-deepseek-v4-pro}
+      FRAMEWORK_DATABASE_URL: ${FRAMEWORK_DATABASE_URL:-postgres://source2video:${SOURCE2VIDEO_POSTGRES_PASSWORD:-source2video_framework_local_only}@source2video-postgres:5432/source2video_framework}
     volumes:
       - ./data/writing-runs:/data/writing-runs
       - ./data/rule-packages:/data/rule-packages
       - ./data/runtime:/app/ui/.doc-maker-runtime
+    depends_on:
+      source2video-postgres:
+        condition: service_healthy
     healthcheck:
       test:
         - CMD
@@ -38,6 +42,27 @@ services:
       interval: 30s
       timeout: 5s
       retries: 6
+      start_period: 10s
+    networks:
+      - ftai-net
+
+  source2video-postgres:
+    image: postgres:16-alpine
+    container_name: source2video-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: source2video_framework
+      POSTGRES_USER: source2video
+      POSTGRES_PASSWORD: ${SOURCE2VIDEO_POSTGRES_PASSWORD:-source2video_framework_local_only}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U source2video -d source2video_framework
+      interval: 10s
+      timeout: 5s
+      retries: 12
       start_period: 10s
     networks:
       - ftai-net

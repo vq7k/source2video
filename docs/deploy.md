@@ -4,6 +4,7 @@
 
 - 公网入口: `https://s2v.x-lin7.com`
 - 运行方式: 轻量服务器 Docker Compose，容器名 `source2video`
+- 数据面: Docker Compose 内置 `source2video-postgres`（Postgres 16），`FRAMEWORK_DATABASE_URL` 未显式配置时默认连接该内网服务
 - 应用入口: `doc-maker/ui`，Next.js standalone，容器端口 `3000`
 - 镜像仓库: `crpi-hych6zm27jhqndgw.cn-hongkong.personal.cr.aliyuncs.com/qv7k/source2video`
 - 网络: 复用 `from-fullstack-to-ai` 的 `infra_ftai-net`
@@ -48,6 +49,12 @@ LANGFUSE_PUBLIC_KEY=...
 LANGFUSE_SECRET_KEY=...
 LANGFUSE_ENVIRONMENT=production
 LANGFUSE_PROJECT_ID=...
+
+# 可选 Framework data plane
+# 不配置 FRAMEWORK_DATABASE_URL 时，docker-compose.yml 默认连接内置 source2video-postgres。
+SOURCE2VIDEO_POSTGRES_PASSWORD=...
+# 如果要复用外部 Postgres/RDS，显式覆盖:
+# FRAMEWORK_DATABASE_URL=postgres://user:password@host:5432/source2video_framework
 ```
 
 如果生产要继续走 CLIProxyAPI，把 `DOC_MAKER_LLM_BASE_URL` 改成服务器上容器可访问的 OpenAI-compatible 地址；不要写容器内不可达的 `localhost:8317`。
@@ -60,10 +67,11 @@ LANGFUSE_PROJECT_ID=...
 /opt/source2video/data/writing-runs
 /opt/source2video/data/rule-packages
 /opt/source2video/data/runtime
+/opt/source2video/data/postgres
 ```
 
-前两个目录保存业务 run 和 Rule Package JSON；`data/runtime` 挂载到容器 `/app/ui/.doc-maker-runtime`，保存页面里写入的 LLM runtime settings。
-目录 owner 需要是容器内 `node` 用户，也就是 uid/gid `1000:1000`；流水线部署脚本会在创建目录后执行 `chown -R 1000:1000 /opt/source2video/data`。
+前两个目录保存业务 run 和 Rule Package JSON；`data/runtime` 挂载到容器 `/app/ui/.doc-maker-runtime`，保存页面里写入的 LLM runtime settings；`data/postgres` 保存 Framework data plane 的 Postgres 数据。
+`writing-runs` / `rule-packages` / `runtime` 目录 owner 需要是容器内 `node` 用户，也就是 uid/gid `1000:1000`；`postgres` 目录由 Postgres 容器 entrypoint 管理，不在部署脚本里 chown 成 node。
 
 ## Caddy site block
 
