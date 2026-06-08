@@ -2,7 +2,7 @@
 
 ## 当前 actionable
 
-**Writing Production 数据飞轮已完成线上全闭环**（2026-06-08）：OpenSpec `add-writing-production-system` 67/67 complete；CodeUp `main` 部署到 `709d501 feat(deploy): add postgres data plane`；云效 pipeline run `17` `SUCCESS`；生产 Docker Compose 已启动内置 `source2video-postgres` 并挂载 `data/postgres`。
+**Writing Production 数据飞轮已完成线上全闭环**（2026-06-08）：OpenSpec `add-writing-production-system` 67/67 complete；线上当前仍运行 `709d501 feat(deploy): add postgres data plane` 的内置 `source2video-postgres` 方案；但最新数据库目标方案已改为复用 `from-fullstack-to-ai` 共享 PostgreSQL `ftai-postgres`，本仓配置已准备为强制 `FRAMEWORK_DATABASE_URL`，不再启动项目独立 PG。
 
 线上验收事实：
 - `GET https://s2v.x-lin7.com/api/health` → 200；`HEAD /writing` → 200。
@@ -10,11 +10,11 @@
 - 最新保留验收数据 `online-acceptance-2026-06-08-keep-data`：run `run_a51abf14`，candidate `candidate_r1_1`，feedback `feedback_531b81ef`，published package `rule_package_8b0b47cc`。
 - dataset draft：`dataset_draft_run_a51abf14_feedback_531b81ef` 写入 `writing_dataset_draft`；human confirm 后 `eval_dataset_item_run_a51abf14_feedback_531b81ef` 写入 `writing_eval_dataset`，split=`validation`。
 
-下一步 actionable：如继续做上线硬化，给生产 `/opt/source2video/.env` 设置强 `SOURCE2VIDEO_POSTGRES_PASSWORD` 后重部署一次；如继续做产品，另起下一阶段 OpenSpec。当前业务闭环无阻塞。
+下一步 actionable：由 infra 在共享 `ftai-postgres` 上 provision 独立 database/role `source2video_framework`，把 `FRAMEWORK_DATABASE_URL=postgresql://source2video_framework:<密码>@ftai-postgres:5432/source2video_framework` 写入 `/opt/source2video/.env`，再部署本仓最新 compose 并验收 dataset route；部署前不要 push CodeUp 触发自动发布。
 
 ## 当前阶段
 
-**持久 Agent team 运行中；Writing Production v1 已上线；OpenSpec `add-writing-production-system` 已完成并归档；framework data plane 的 Writing dataset 已在线上真实闭环验证打通**（2026-06-08）。
+**持久 Agent team 运行中；Writing Production v1 已上线；OpenSpec `add-writing-production-system` 已完成并归档；framework data plane 的 Writing dataset 已在线上真实闭环验证打通；数据库拓扑正在从内置 PG 收敛到共享 `ftai-postgres`**（2026-06-08）。
 
 Agent team：
 
@@ -35,11 +35,14 @@ Agent team：
 - 最近部署提交：`709d501 feat(deploy): add postgres data plane`；镜像 tag `709d501c`
 - 最近部署流水线：`pipelineRunId=17` `SUCCESS`；镜像构建 `SUCCESS`；部署 `SUCCESS`；deployOrderId `63525694`
 - 线上验收：`/api/health` ok；`/writing` ok；最新保留验收 run `run_a51abf14` 最终 `finalized`，feedback 1，rule patch 1，published rule package `rule_package_8b0b47cc`，dataset draft/eval confirm 均 200。
+- 最新目标拓扑：复用共享 `ftai-postgres`，独立 database/role `source2video_framework`；本仓 `docker-compose.yml` 已移除 `source2video-postgres`，但尚未部署。
 - 生产网关修复：`ftai-caddy` 原 Caddyfile 缺少 `s2v.x-lin7.com` HTTPS site block；已在服务器 `/opt/from-fullstack-to-ai/infra/Caddyfile` 追加并 reload，备份为 `Caddyfile.bak.s2v-20260605-085109`。
 - 本次本地收口新增：`/writing` 反馈再来一轮 + Rule Package 草稿/发布；`/framework?traceId=` Trace 已定位 + ScoreSink 状态。
 - 本地验证：`pnpm test` 4 files / 7 tests passed；`pnpm e2e` 6 passed；`pnpm build` passed。
 
 ## 最近一次 session
+
+**2026-06-08 校准数据库拓扑为共享 PostgreSQL**：用户指出最新方案是复用 `/Users/xuelin/projects/from-fullstack-to-ai/infra/docs/shared-database.md` 的共享 `ftai-postgres`，且 `agent-minimal` 已按该方案上线。复核历史发现 2026-06-05 Infra 建议本就写明“用户另一项目已有 PG → 首选复用该实例建独立库，避免新起长期服务；不要写进 compose / 不要常驻”。`709d501` 的内置 PG 是短期上线收口方案，现已改回目标方案：`docker-compose.yml` 不再启动 `source2video-postgres`，改为要求生产显式 `FRAMEWORK_DATABASE_URL`；`docs/deploy.md` 对齐共享库 provision/连接方式；`flow.yml` 不再创建 `data/postgres`。未部署，等待 infra 开库和服务器 env。
 
 **2026-06-08 线上验收并保留测试数据**：按用户要求重新跑公网验收且不清理测试数据。tag=`online-acceptance-2026-06-08-keep-data`；health/page/repository configured 通过；run `run_a51abf14` 完成 confirm、feedback、rule patch、finalize、rule package publish；`writing_dataset_draft` 写入 `dataset_draft_run_a51abf14_feedback_531b81ef`，人工确认后 `writing_eval_dataset` 写入 `eval_dataset_item_run_a51abf14_feedback_531b81ef`；read-back 确认 run status=`finalized`、feedbackCount=1、rulePackageCount=1、containsTag=true。
 

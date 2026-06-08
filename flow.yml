@@ -78,7 +78,7 @@ stages:
             REGISTRY_HOST=crpi-hych6zm27jhqndgw.cn-hongkong.personal.cr.aliyuncs.com
             IMAGE_TAG="${CI_COMMIT_ID}"
 
-            mkdir -p "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime" "$APP/data/postgres"
+            mkdir -p "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime"
             chown -R 1000:1000 "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime"
             tar xzf /tmp/source2video-deploy.tgz -C "$APP"
             rm -f /tmp/source2video-deploy.tgz

@@ -122,25 +122,29 @@ describe("framework package topology", () => {
     );
   });
 
-  it("provides an internal Postgres data plane in production compose", () => {
+  it("requires the shared Postgres data plane instead of starting a project-local database", () => {
     const compose = readText("docker-compose.yml");
+    const deployDocs = readText("docs/deploy.md");
 
-    expect(compose).toContain("FRAMEWORK_DATABASE_URL:");
-    expect(compose).toContain("source2video-postgres:5432/source2video_framework");
-    expect(compose).toContain("source2video-postgres:");
-    expect(compose).toContain("postgres:16-alpine");
-    expect(compose).toContain("./data/postgres:/var/lib/postgresql/data");
+    expect(compose).toContain("FRAMEWORK_DATABASE_URL: ${FRAMEWORK_DATABASE_URL:?");
+    expect(compose).not.toContain("source2video-postgres:");
+    expect(compose).not.toContain("postgres:16-alpine");
+    expect(compose).not.toContain("./data/postgres:/var/lib/postgresql/data");
+    expect(deployDocs).toContain(
+      "FRAMEWORK_DATABASE_URL=postgresql://source2video_framework:<密码>@ftai-postgres:5432/source2video_framework",
+    );
   });
 
-  it("keeps deploy ownership changes away from the Postgres data directory", () => {
+  it("keeps deploy data directories scoped to app-owned filesystem stores", () => {
     const flow = readText("flow.yml");
 
     expect(flow).toContain(
-      'mkdir -p "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime" "$APP/data/postgres"',
+      'mkdir -p "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime"',
     );
     expect(flow).toContain(
       'chown -R 1000:1000 "$APP/data/writing-runs" "$APP/data/rule-packages" "$APP/data/runtime"',
     );
+    expect(flow).not.toContain('"$APP/data/postgres"');
     expect(flow).not.toContain('chown -R 1000:1000 "$APP/data"');
   });
 });
