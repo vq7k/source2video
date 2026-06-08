@@ -45,6 +45,9 @@ RUN mkdir -p /data/writing-runs /data/rule-packages /app/ui/.doc-maker-runtime \
 
 COPY --from=builder --chown=node:node /app/doc-maker/ui/.next/standalone ./
 COPY --from=builder --chown=node:node /app/doc-maker/ui/.next/static ./ui/.next/static
+COPY --from=builder --chown=node:node /app/packages/framework-store/migrations ./packages/framework-store/migrations
+COPY --from=builder --chown=node:node /app/packages/framework-store/node_modules ./packages/framework-store/node_modules
+COPY --from=builder --chown=node:node /app/packages/framework-store/node_modules ./node_modules
 
 USER node
 

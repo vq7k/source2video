@@ -10,6 +10,13 @@ export async function GET(
 ) {
   const { runId } = await context.params;
   const run = await readWritingRun(runId);
+  if (!run) {
+    return NextResponse.json(
+      { error: "Writing run not found", runId },
+      { status: 404 },
+    );
+  }
+
   return NextResponse.json({
     frameworkRuns: run.frameworkRuns ?? [],
     llmTraces: run.llmTraces ?? [],

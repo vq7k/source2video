@@ -10,12 +10,16 @@ function storeDir() {
 export type RunStore = {
   pathFor(runId: string): string;
   put(run: WritingRunRecord): Promise<void>;
-  get(runId: string): Promise<WritingRunRecord>;
+  get(runId: string): Promise<WritingRunRecord | null>;
   list(): Promise<WritingRunRecord[]>;
 };
 
 async function ensureStore() {
   await mkdir(storeDir(), { recursive: true });
+}
+
+function isMissingStoreFile(error: unknown): boolean {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === "ENOENT";
 }
 
 export const jsonRunStore: RunStore = {
@@ -29,8 +33,15 @@ export const jsonRunStore: RunStore = {
   },
 
   async get(runId: string) {
-    const content = await readFile(this.pathFor(runId), "utf8");
-    return JSON.parse(content) as WritingRunRecord;
+    try {
+      const content = await readFile(this.pathFor(runId), "utf8");
+      return JSON.parse(content) as WritingRunRecord;
+    } catch (error) {
+      if (isMissingStoreFile(error)) {
+        return null;
+      }
+      throw error;
+    }
   },
 
   async list() {

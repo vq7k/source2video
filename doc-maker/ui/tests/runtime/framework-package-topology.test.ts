@@ -105,4 +105,18 @@ describe("framework package topology", () => {
       "COPY --from=deps /app/packages/framework-store/node_modules ./packages/framework-store/node_modules",
     );
   });
+
+  it("copies framework-store runtime assets into the production Docker runner", () => {
+    const dockerfile = readText("Dockerfile");
+
+    expect(dockerfile).toContain(
+      "COPY --from=builder --chown=node:node /app/packages/framework-store/migrations ./packages/framework-store/migrations",
+    );
+    expect(dockerfile).toContain(
+      "COPY --from=builder --chown=node:node /app/packages/framework-store/node_modules ./packages/framework-store/node_modules",
+    );
+    expect(dockerfile).toContain(
+      "COPY --from=builder --chown=node:node /app/packages/framework-store/node_modules ./node_modules",
+    );
+  });
 });

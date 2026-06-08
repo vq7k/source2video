@@ -315,6 +315,34 @@ describe("writing dataset draft persistence", () => {
     });
   });
 
+  it("returns 404 from the dataset draft API route when the configured repository has no matching run", async () => {
+    const repository = new FakeDatasetRepository();
+    const routeModule = (await import("../../app/api/writing-runs/[runId]/dataset-drafts/route")) as {
+      POST: (
+        request: Request,
+        context: { params: Promise<{ runId: string }> },
+      ) => Promise<Response>;
+    };
+
+    setWritingDatasetDraftRepositoryProviderForTests(() => repository);
+    try {
+      const response = await routeModule.POST(new Request("http://localhost/api/writing-runs/missing-run/dataset-drafts", {
+        method: "POST",
+      }), {
+        params: Promise.resolve({ runId: "missing-run" }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(body).toEqual({
+        error: "Writing run not found",
+        runId: "missing-run",
+      });
+    } finally {
+      setWritingDatasetDraftRepositoryProviderForTests(null);
+    }
+  });
+
   it("promotes dataset drafts through the confirmation API route when a repository is configured", async () => {
     const run = await createRunWithDatasetDraft();
     const repository = new FakeDatasetRepository();
@@ -363,6 +391,35 @@ describe("writing dataset draft persistence", () => {
           }),
         }),
       ]);
+    } finally {
+      setWritingDatasetDraftRepositoryProviderForTests(null);
+    }
+  });
+
+  it("returns 404 from the confirmation API route when the configured repository has no matching run", async () => {
+    const repository = new FakeDatasetRepository();
+    const routeModule = (await import("../../app/api/writing-runs/[runId]/dataset-drafts/confirm/route")) as {
+      POST: (
+        request: Request,
+        context: { params: Promise<{ runId: string }> },
+      ) => Promise<Response>;
+    };
+
+    setWritingDatasetDraftRepositoryProviderForTests(() => repository);
+    try {
+      const response = await routeModule.POST(new Request("http://localhost/api/writing-runs/missing-run/dataset-drafts/confirm", {
+        method: "POST",
+        body: JSON.stringify({ confirmedBy: "human-reviewer" }),
+      }), {
+        params: Promise.resolve({ runId: "missing-run" }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(404);
+      expect(body).toEqual({
+        error: "Writing run not found",
+        runId: "missing-run",
+      });
     } finally {
       setWritingDatasetDraftRepositoryProviderForTests(null);
     }

@@ -1186,7 +1186,16 @@ export async function createWritingRun(input: CreateWritingRunInput) {
 }
 
 export async function readWritingRun(runId: string) {
-  return normalizeWritingRunRecord(await jsonRunStore.get(runId));
+  const run = await jsonRunStore.get(runId);
+  return run ? normalizeWritingRunRecord(run) : null;
+}
+
+async function readRequiredWritingRun(runId: string) {
+  const run = await readWritingRun(runId);
+  if (!run) {
+    throw new Error(`Writing run not found: ${runId}`);
+  }
+  return run;
 }
 
 export async function listWritingRuns() {
@@ -1194,7 +1203,7 @@ export async function listWritingRuns() {
 }
 
 export async function recordTopicContext(runId: string, input: RecordTopicContextInput) {
-  const run = await readWritingRun(runId);
+  const run = await readRequiredWritingRun(runId);
   const text = input.text.trim().replace(/\s+/g, " ");
   const limitedText =
     text.length > TOPIC_CONTEXT_TEXT_LIMIT
@@ -1237,7 +1246,7 @@ export async function recordTopicContext(runId: string, input: RecordTopicContex
 }
 
 export async function confirmWritingRunPrecheck(runId: string) {
-  const run = await readWritingRun(runId);
+  const run = await readRequiredWritingRun(runId);
   const normalizedRun = { ...run, round: run.round ?? 1 };
   const ruleSnapshots = normalizedRuleSnapshots(normalizedRun);
   const activeRuleSnapshot = ruleSnapshots.at(-1) ?? initialRuleSnapshot(run.id, run.createdAt, run.precheckRun);
@@ -1304,7 +1313,7 @@ export async function confirmWritingRunPrecheck(runId: string) {
 }
 
 export async function compileRulePatch(runId: string, input: CompileRulePatchInput) {
-  const run = await readWritingRun(runId);
+  const run = await readRequiredWritingRun(runId);
   const patches = normalizedRulePatches(run);
   const feedback = run.feedback.filter(
     (item) =>
@@ -1432,7 +1441,7 @@ export async function compileRulePatch(runId: string, input: CompileRulePatchInp
 }
 
 export async function runGenerationBatch(runId: string, input: RunGenerationBatchInput = {}) {
-  const run = await readWritingRun(runId);
+  const run = await readRequiredWritingRun(runId);
   const nextRound = (run.round ?? 1) + 1;
   const patches = normalizedRulePatches(run);
   const patchIds =
@@ -1599,7 +1608,7 @@ export async function listRulePackages() {
 }
 
 export async function createRulePackageDraft(runId: string, input: CreateRulePackageDraftInput = {}) {
-  const run = await readWritingRun(runId);
+  const run = await readRequiredWritingRun(runId);
   const candidateId = input.candidateId ?? run.finalizedCandidateId;
   const candidate = run.candidates.find((item) => item.id === candidateId);
 
@@ -1649,7 +1658,7 @@ export async function createRulePackageDraft(runId: string, input: CreateRulePac
 }
 
 export async function publishRulePackage(runId: string, input: PublishRulePackageInput) {
-  const run = await readWritingRun(runId);
+  const run = await readRequiredWritingRun(runId);
   const storedPackage = await jsonRulePackageStore.get(input.packageId);
   const publishedAt = now();
   const rulePackage: RulePackageRecord = {
@@ -1678,7 +1687,7 @@ export async function publishRulePackage(runId: string, input: PublishRulePackag
 }
 
 export async function finalizeWritingRun(runId: string, input: FinalizeWritingRunInput) {
-  const run = await readWritingRun(runId);
+  const run = await readRequiredWritingRun(runId);
   const candidate = run.candidates.find((item) => item.id === input.candidateId);
 
   if (!candidate) {
@@ -1705,7 +1714,7 @@ export async function finalizeWritingRun(runId: string, input: FinalizeWritingRu
 }
 
 export async function recordHumanFeedback(runId: string, input: HumanFeedbackInput) {
-  const run = await readWritingRun(runId);
+  const run = await readRequiredWritingRun(runId);
   const baseFeedback: HumanFeedbackRecord = {
     id: shortId("feedback"),
     at: now(),
@@ -1811,7 +1820,7 @@ export async function recordHumanFeedback(runId: string, input: HumanFeedbackInp
 }
 
 export async function deleteHumanFeedback(runId: string, feedbackId: string) {
-  const run = await readWritingRun(runId);
+  const run = await readRequiredWritingRun(runId);
   const feedbackLedger = run.feedback.filter((item) => item.id !== feedbackId);
   const scoredFeedback = feedbackLedger.filter(
     (item): item is HumanFeedbackRecord & { score: number } =>
