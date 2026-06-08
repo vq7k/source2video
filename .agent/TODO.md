@@ -2,12 +2,15 @@
 
 ## 当前 in-progress
 
-- [ ] **迁移到共享 PostgreSQL**：infra 在 `ftai-postgres` provision `source2video_framework` database/role，服务器 `/opt/source2video/.env` 写 `FRAMEWORK_DATABASE_URL=postgresql://source2video_framework:<密码>@ftai-postgres:5432/source2video_framework`，再部署本仓最新 compose。
+无。
 
 ## 已收口（本 session）
 
 - [x] OpenSpec 13.4：Feedback Ledger -> `writing_dataset_draft`；人工确认 -> `writing_eval_dataset`，draft 不被静默改写
 - [x] OpenSpec 13.5：当前不做 Source Store / RAG / workflow builder，继续 Reference Paste + 既有 trace/eval 闭环
+- [x] 共享 PostgreSQL 线上切换：`ftai-postgres/source2video_framework` 已开库、迁移、写生产 env、部署并验收
+- [x] 旧项目内 PG 移除：线上 compose 已不含 `source2video-postgres`，容器已被 `--remove-orphans` 清理
+- [x] Docker Hub rate limit 修复：`a067d24` 改用 `public.ecr.aws/docker/library/node:22-slim`，run `20` 部署成功
 - [x] 数据库目标方案校准：本仓移除内置 `source2video-postgres`，改为复用共享 `ftai-postgres` 的独立 database/role
 - [x] 线上数据飞轮闭环：run `run_2f8ec678` 完成 confirm / feedback / rule patch / finalize / rule package publish / dataset draft / eval confirm
 - [x] OpenSpec 归档：`add-writing-production-system` -> `openspec/changes/archive/2026-06-08-add-writing-production-system/`，主 specs 已生成
@@ -31,7 +34,7 @@
 ## 候选里程碑（待 user 拍板优先级）
 
 - [x] 数据飞轮第一闭环（本地）：人工反馈 → rule package / dataset draft → human-confirmed eval dataset → Postgres dataset item
-- [x] 数据飞轮上线：生产 compose 内置 PG + lazy migration + 线上 dataset route / confirm route 验收
+- [x] 数据飞轮上线：共享 `ftai-postgres` + 线上 dataset route / confirm route 验收
 - [ ] framework data plane 本地闭环：root `packages/` contracts → Postgres SOT → worker queue → artifact store → dataset/eval/gate
 - [ ] doc-maker writing production 下一阶段范围决断：Topic/Round、规则包、评审闭环、业务 UI 打磨或稳定性增强
 - [ ] video-maker 启动设计（如推进：视觉决策 + Remotion 渲染编排）
@@ -50,7 +53,8 @@
 
 ## 线上运维候选（按需）
 
-- [ ] 停用线上旧 `source2video-postgres` 容器前，确认 shared DB 已迁移/验收；需要保留历史验收数据时先从旧库导出 `framework_dataset_items`
+- [x] 停用线上旧 `source2video-postgres`：shared DB 已迁移/验收，旧容器已被 compose 清理
+- [ ] 为 `source2video_framework` 补逻辑备份/恢复演练（`pg_dump` 单库粒度）
 - [ ] 将 `s2v.x-lin7.com` Caddy site block 从生产手工配置同步回网关项目的长期 SOT，避免未来重建 `ftai-caddy` 丢失配置
 - [ ] 如继续用 Langfuse 页面验收，安装/启用 Codex Chrome Extension 后可复用 Chrome 登录态验证 trace 页面权限
 - [ ] 如需要回滚，重跑云效历史流水线；镜像 tag 使用 `${CI_COMMIT_ID}`，不是裸 `latest`
